@@ -2,7 +2,7 @@ from IFeature import IFeature
 import discord
 import logging
 import re
-from Bosses import BOSSES
+from .Bosses import BOSSES
 
 logger = logging.getLogger(__name__)
 
