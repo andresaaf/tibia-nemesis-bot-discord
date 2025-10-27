@@ -1,4 +1,5 @@
 from IFeature import IFeature
+import re
 import discord
 from discord import app_commands
 import logging
@@ -55,6 +56,9 @@ class PriceList(IFeature):
         # Build message content as a table
         messages = []
         header = "**Boss Price List**\n```\nBoss Name                        | Price\n" + "-" * 45 + "\n"
+        footer = "```"
+        # Reserve space for page indicator (e.g., " (99/99)" = 9 chars max for reasonable page counts)
+        PAGE_INDICATOR_RESERVE = 12
         current_lines = [header]
         current_length = len(header)
         
@@ -63,36 +67,61 @@ class PriceList(IFeature):
             line = f"{name:<32} | {price}\n"
             line_length = len(line)
             
-            # Check if adding this line would exceed the limit
-            if current_length + line_length + 3 > MAX_MESSAGE_LENGTH - 100:  # +3 for closing ```
-                # Close the code block and start a new message
-                current_lines.append("```")
-                messages.append("".join(current_lines))
-                current_lines = ["```\n" + line]
-                current_length = len(current_lines[0])
+            # If adding this line would exceed the limit (including footer and page indicator reserve), start a new page
+            if current_length + line_length + len(footer) + PAGE_INDICATOR_RESERVE > MAX_MESSAGE_LENGTH:
+                # finalize current page
+                messages.append("".join(current_lines) + footer)
+                # start a new page with the header again
+                current_lines = [header, line]
+                current_length = len(header) + line_length
             else:
                 current_lines.append(line)
                 current_length += line_length
         
-        # Close the code block and add the last message
+        # finalize last page if it has content beyond header
         if current_lines:
-            current_lines.append("```")
-            messages.append("".join(current_lines))
+            messages.append("".join(current_lines) + footer)
+
+        # Add page indicators to the header line, e.g., "Boss Price List (1/3)"
+        total = len(messages)
+        if total > 1:
+            updated_messages = []
+            for idx, content in enumerate(messages, start=1):
+                # Replace the first line header
+                first_nl = content.find("\n")
+                if first_nl != -1:
+                    title = content[:first_nl]
+                    rest = content[first_nl+1:]
+                    if title.startswith("**Boss Price List**"):
+                        title = f"**Boss Price List ({idx}/{total})**"
+                        content = title + "\n" + rest
+                updated_messages.append(content)
+            messages = updated_messages
         
         return messages
     
+    def _is_price_header(self, content: str) -> bool:
+        """Return True if content starts with our price list header (with or without page indicator)."""
+        return re.match(r"^\*\*Boss Price List(\s*\(\d+/\d+\))?\*\*", content or "") is not None
+
     async def _update_price_list(self, channel: discord.TextChannel):
         """Update the price list in the given channel."""
         try:
             # Get new content
             new_messages = self._build_price_list_content()
             
-            # Fetch existing messages from the channel
-            existing_messages = []
+            # Fetch existing messages from the channel: pick the most recent contiguous block
+            existing_recent_block = []  # newest-first while collecting
+            collecting = False
             async for message in channel.history(limit=100):
-                if message.author == self.client.user and message.content.startswith("**Boss Price List**"):
-                    existing_messages.append(message)
-            existing_messages.reverse()  # Oldest first
+                if message.author == self.client.user and self._is_price_header(message.content):
+                    existing_recent_block.append(message)
+                    collecting = True
+                else:
+                    if collecting:
+                        break  # stop at first gap after we've started collecting a block
+            # reorder to oldest-first for deterministic updating
+            existing_messages = list(reversed(existing_recent_block))
             
             # Update or create messages as needed
             message_ids = []
