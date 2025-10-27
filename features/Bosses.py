@@ -1,9 +1,10 @@
 BOSSES = {
     # Special
-    'Bankers (Board)': {
-        'name': 'Bankers (Board)',
+    'Bank Robbers (Board)': {
+        'name': 'Bank Robbers (Board)',
         'emoji': None,
-        'role': None
+        'role': None,
+        'persist': True
     },
 
     # Bosses
@@ -43,6 +44,7 @@ BOSSES = {
         'name': 'Arthom the Hunter',
         'emoji': 'ArthomTheHunter',
         'role': 'Arthom the Hunter',
+        'persist': True,
         'price': 200000
     },
     'Barbaria': {
@@ -100,6 +102,7 @@ BOSSES = {
         'name': 'Crustacea Gigantica',
         'emoji': 'CrustaceaGigantica',
         'role': 'Crustacea Gigantica',
+        'persist': True,
         'price': 200000
     },
     'Cublarc the Plunderer': {
@@ -130,6 +133,7 @@ BOSSES = {
         'name': 'Dire Penguin',
         'emoji': 'DirePenguin',
         'role': 'Dire Penguin',
+        'persist': True,
         'price': 200000
     },
     'Dracola': {
@@ -272,12 +276,14 @@ BOSSES = {
         'name': 'Groam',
         'emoji': 'Groam',
         'role': 'Groam',
+        'persist': True,
         'price': 200000
     },
     'Grorlam': {
         'name': 'Grorlam',
         'emoji': 'Grorlam',
         'role': 'Grorlam',
+        'persist': True,
         'price': 200000
     },
     'Hairman the Huge': {
@@ -324,6 +330,7 @@ BOSSES = {
         'name': 'Mahatheb',
         'emoji': 'Mahatheb',
         'role': 'Mahatheb',
+        'persist': True,
         'price': 1000000
     },
     'Man in the Cave': {
@@ -389,6 +396,7 @@ BOSSES = {
         'name': 'Oodok Witchmaster',
         'emoji': 'OodokWitchmaster',
         'role': 'Oodok Witchmaster',
+        'persist': True,
         'price': 200000
     },
     'Orshabaal': {
@@ -648,6 +656,7 @@ BOSSES = {
         'name': 'Yakchal',
         'emoji': 'Yakchal',
         'role': 'Yakchal',
+        'persist': True,
         'price': 200000
     },
     'Yeti': {
