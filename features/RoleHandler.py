@@ -141,28 +141,9 @@ class RoleHandler(IFeature):
         self._role_messages = {}
         # channel_id -> channel type ('nemesis' or 'other')
         self._channel_types = {}
-        # Cache for application emojis
-        self._app_emojis = {}
         self._init_db()
         
-    async def _get_emoji(self, emoji_name: str, guild: discord.Guild = None):
-        """Get emoji by name from application emojis."""
-        # Check cache first
-        if emoji_name in self._app_emojis:
-            return self._app_emojis[emoji_name]
-        
-        # Fetch application emojis if cache is empty
-        if not self._app_emojis:
-            try:
-                app_emojis = await self.client.fetch_application_emojis()
-                for emoji in app_emojis:
-                    self._app_emojis[emoji.name] = emoji
-            except Exception as e:
-                logger.error(f"Failed to fetch application emojis: {e}")
-                return None
-        
-        # Return from cache
-        return self._app_emojis.get(emoji_name)
+    
         
     def _init_db(self):
         """Initialize database tables and load existing data."""
@@ -184,7 +165,7 @@ class RoleHandler(IFeature):
         lines = [f"**{section_name}**"]
         for boss_data in bosses:
             if boss_data['emoji'] and boss_data['name']:
-                emoji = await self._get_emoji(boss_data['emoji'], channel.guild)
+                emoji = await self.client.get_app_emoji(boss_data['emoji'])
                 if emoji:
                     lines.append(f"{emoji} - {boss_data['name']}")
                 else:
@@ -196,7 +177,7 @@ class RoleHandler(IFeature):
         emoji_role_map = {}
         for boss_data in bosses:
             if boss_data['emoji'] and boss_data['role']:
-                emoji = await self._get_emoji(boss_data['emoji'], channel.guild)
+                emoji = await self.client.get_app_emoji(boss_data['emoji'])
                 if not emoji:
                     logger.warning(f"Emoji '{boss_data['emoji']}' not found in application emojis")
                     continue
@@ -224,7 +205,7 @@ class RoleHandler(IFeature):
         emoji_role_map = {}
         for boss_data in bosses:
             if boss_data['emoji'] and boss_data['role']:
-                emoji = await self._get_emoji(boss_data['emoji'], channel.guild)
+                emoji = await self.client.get_app_emoji(boss_data['emoji'])
                 if emoji:
                     role = discord.utils.get(channel.guild.roles, name=boss_data['role'])
                     if role:
@@ -304,7 +285,7 @@ class RoleHandler(IFeature):
             for boss_data in bosses:
                 if boss_data['emoji'] and boss_data['name']:
                     emoji_name = boss_data['emoji']
-                    emoji = await self._get_emoji(emoji_name, guild)
+                    emoji = await self.client.get_app_emoji(emoji_name)
                     
                     if emoji:
                         expected_lines.append(f"{emoji} - {boss_data['name']}")

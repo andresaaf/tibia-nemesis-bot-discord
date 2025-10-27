@@ -17,11 +17,13 @@ class GolluxBot(discord.Client):
         Path("db").mkdir(parents=True, exist_ok=True)
         self.db = Database()
         self.tree = discord.app_commands.CommandTree(self)
+        # Shared application emoji cache for all features
+        self._app_emojis = {}
 
         self.features = [
-            RoleHandler(self),
+            #PriceList(self),
             BossAnnouncer(self),
-            PriceList(self),
+            #RoleHandler(self),
         ]
 
     async def _safe_call(self, method_name, *args, **kwargs):
@@ -105,6 +107,24 @@ class GolluxBot(discord.Client):
             pass
 
         await self._safe_call('on_button_click', interaction)
+
+    async def get_app_emoji(self, emoji_name: str):
+        """Return an application emoji by name, fetching once and caching for all features."""
+        if not emoji_name:
+            return None
+        # Return from cache if available
+        if emoji_name in self._app_emojis:
+            return self._app_emojis[emoji_name]
+        # Populate cache on first use
+        if not self._app_emojis:
+            try:
+                app_emojis = await self.fetch_application_emojis()
+                for e in app_emojis:
+                    self._app_emojis[e.name] = e
+            except Exception:
+                logging.exception("Failed to fetch application emojis")
+                return None
+        return self._app_emojis.get(emoji_name)
 
 if __name__ == '__main__':
     token = os.getenv('DISCORD_TOKEN')
