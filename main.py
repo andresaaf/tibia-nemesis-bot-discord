@@ -7,6 +7,7 @@ from Database import Database
 from RoleHandler import RoleHandler
 from BossAnnouncer import BossAnnouncer
 from Checker import Checker
+from PriceList import PriceList
 
 logging.basicConfig(level=logging.INFO)
 
@@ -23,6 +24,7 @@ class GolluxBot(discord.Client):
         self.features = [
             RoleHandler(self),
             BossAnnouncer(self),
+            PriceList(self),
             #Checker(self),
         ]
 
