@@ -1,0 +1,6 @@
+token.txt
+
+__pycache__/
+.vs/
+.vscode/
+db/
