@@ -37,6 +37,10 @@ class GolluxBot(discord.Client):
 
     async def on_ready(self):
         logging.info('Connected. Username: %s | ID: %s', self.user.name, self.user.id)
+        # Get emoji cache
+        await self.warm_app_emojis()
+
+        # Run on_ready for all features
         await self._safe_call('on_ready')
 
         # Sync the command tree once after all features registered their commands
@@ -112,19 +116,22 @@ class GolluxBot(discord.Client):
         """Return an application emoji by name, fetching once and caching for all features."""
         if not emoji_name:
             return None
-        # Return from cache if available
-        if emoji_name in self._app_emojis:
-            return self._app_emojis[emoji_name]
-        # Populate cache on first use
+        # Ensure cache is populated using the shared warmer
         if not self._app_emojis:
-            try:
-                app_emojis = await self.fetch_application_emojis()
-                for e in app_emojis:
-                    self._app_emojis[e.name] = e
-            except Exception:
-                logging.exception("Failed to fetch application emojis")
-                return None
+            await self.warm_app_emojis()
         return self._app_emojis.get(emoji_name)
+
+    async def warm_app_emojis(self):
+        """Fetch and cache application emojis once at startup for all features."""
+        if self._app_emojis:
+            return
+        try:
+            app_emojis = await self.fetch_application_emojis()
+            for e in app_emojis:
+                self._app_emojis[e.name] = e
+            logging.info("Warmed application emoji cache with %d emojis", len(self._app_emojis))
+        except Exception:
+            logging.exception("Failed to warm application emoji cache")
 
 if __name__ == '__main__':
     token = os.getenv('DISCORD_TOKEN')
