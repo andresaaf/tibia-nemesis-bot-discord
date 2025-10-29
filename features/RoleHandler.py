@@ -62,7 +62,7 @@ NEMESIS_SECTIONS = {
         BOSSES['Hairman the Huge'],
         BOSSES['Hatebreeder'],
         BOSSES['High Templar Cobrass'],
-        BOSSES['Hirintor'],
+        BOSSES['Hirintror'],
         BOSSES['Mahatheb'],
         BOSSES['Man in the Cave'],
     ],
@@ -222,8 +222,6 @@ class RoleHandler(IFeature):
                 
             # Get the appropriate sections
             sections = NEMESIS_SECTIONS if channel_type == "nemesis" else OTHER_SECTIONS
-            
-            # Fetch all messages from the channel (assuming it's a dedicated channel)
             messages = []
             async for message in channel.history(limit=100):
                 if message.author == self.client.user:
@@ -333,6 +331,8 @@ class RoleHandler(IFeature):
         from discord import app_commands
         
         @app_commands.command(name="setuproles", description="Set up role reactions in the current channel")
+        @app_commands.default_permissions(manage_roles=True)
+        @app_commands.checks.has_permissions(manage_roles=True)
         @app_commands.describe(channel_type="The type of channel to set up (nemesis or other)")
         @app_commands.choices(channel_type=[
             app_commands.Choice(name="Nemesis Bosses", value="nemesis"),
@@ -341,12 +341,6 @@ class RoleHandler(IFeature):
         async def setup_roles(interaction: discord.Interaction, channel_type: str):
             if not interaction.guild or not interaction.channel:
                 await interaction.response.send_message("This command must be used in a server channel.", ephemeral=True)
-                return
-                
-            # Check permissions
-            member = interaction.guild.get_member(interaction.user.id)
-            if not member or not member.guild_permissions.manage_roles:
-                await interaction.response.send_message("You need the Manage Roles permission to run this command.", ephemeral=True)
                 return
                 
             # Check bot permissions
@@ -394,15 +388,11 @@ class RoleHandler(IFeature):
             await self._sync_all_reactions(interaction.guild, interaction.channel)
             
         @app_commands.command(name="removeroles", description="Remove role reaction setup from the current channel")
+        @app_commands.default_permissions(manage_roles=True)
+        @app_commands.checks.has_permissions(manage_roles=True)
         async def remove_roles(interaction: discord.Interaction):
             if not interaction.guild or not interaction.channel:
                 await interaction.response.send_message("This command must be used in a server channel.", ephemeral=True)
-                return
-                
-            # Check permissions
-            member = interaction.guild.get_member(interaction.user.id)
-            if not member or not member.guild_permissions.manage_roles:
-                await interaction.response.send_message("You need the Manage Roles permission to run this command.", ephemeral=True)
                 return
                 
             channel_id = interaction.channel.id
@@ -464,24 +454,30 @@ class RoleHandler(IFeature):
                         if not role:
                             continue
                             
-                        # Get users who reacted
+                        # Build a set of reactor user IDs once to avoid multiple API iterations
+                        reactor_ids = set()
                         async for user in reaction.users():
                             if not user.bot:
-                                member = guild.get_member(user.id)
-                                if member:
-                                    if role not in member.roles:
-                                        await member.add_roles(role, reason="Role reaction sync")
-                                        
-                        # Remove role from users who haven't reacted
-                        for member in role.members:
-                            if not member.bot:
-                                has_reaction = False
-                                async for reactor in reaction.users():
-                                    if reactor.id == member.id:
-                                        has_reaction = True
-                                        break
-                                if not has_reaction:
-                                    await member.remove_roles(role, reason="Role reaction sync")
+                                reactor_ids.add(user.id)
+
+                        # Current members who have the role (from cache)
+                        current_ids_with_role = {m.id for m in role.members if not m.bot}
+
+                        # Compute differences
+                        to_add = reactor_ids - current_ids_with_role
+                        to_remove = current_ids_with_role - reactor_ids
+
+                        # Apply additions
+                        for uid in to_add:
+                            member = guild.get_member(uid)
+                            if member and role not in member.roles:
+                                await member.add_roles(role, reason="Role reaction sync")
+
+                        # Apply removals
+                        for uid in to_remove:
+                            member = guild.get_member(uid)
+                            if member and role in member.roles:
+                                await member.remove_roles(role, reason="Role reaction sync")
                                     
             except Exception as e:
                 logger.error(f"Failed to sync reactions for message {message_id}: {e}")

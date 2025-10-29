@@ -12,27 +12,32 @@ BOSSES = {
         'name': 'Albino Dragon',
         'emoji': 'AlbinoDragon',
         'role': 'Albino Dragon',
-        'price': 200000
+        'price': 200000,
+        'persist': True
     },
     'Albino Dragon - POI': {
         'name': 'Albino Dragon',
         'emoji': 'AlbinoDragon',
         'role': 'Albino Dragon',
+        'persist': True
     },
     'Albino Dragon - Ankrahmun': {
         'name': 'Albino Dragon',
         'emoji': 'AlbinoDragon',
         'role': 'Albino Dragon',
+        'persist': True
     },
     'Albino Dragon - Zao': {
         'name': 'Albino Dragon',
         'emoji': 'AlbinoDragon',
         'role': 'Albino Dragon',
+        'persist': True
     },
     'Albino Dragon - Liberty Bay': {
         'name': 'Albino Dragon',
         'emoji': 'AlbinoDragon',
         'role': 'Albino Dragon',
+        'persist': True
     },
     'Arachir the Ancient One': {
         'name': 'Arachir the Ancient One',
@@ -42,6 +47,7 @@ BOSSES = {
     },
     'Arthom the Hunter': {
         'name': 'Arthom the Hunter',
+        'checker_name': 'Arthom/Oodok',
         'emoji': 'ArthomTheHunter',
         'role': 'Arthom the Hunter',
         'persist': True,
@@ -51,26 +57,31 @@ BOSSES = {
         'name': 'Barbaria',
         'emoji': 'Barbaria',
         'role': 'Barbaria',
-        'price': 200000
+        'price': 200000,
+        'unknown_after_days': 23
     },
     'Battlemaster Zunzu': {
         'name': 'Battlemaster Zunzu',
+        'checker_name': 'Zunzu',
         'emoji': 'BattlemasterZunzu',
         'role': 'Battlemaster Zunzu',
         'price': 200000
     },
     'Battlemaster Zunzu - West': {
         'name': 'Battlemaster Zunzu (West)',
+        'checker_name': 'Zunzu (West)',
         'emoji': 'BattlemasterZunzu',
         'role': 'Battlemaster Zunzu',
     },
     'Battlemaster Zunzu - Middle': {
         'name': 'Battlemaster Zunzu (Middle)',
+        'checker_name': 'Zunzu (Middle)',
         'emoji': 'BattlemasterZunzu',
         'role': 'Battlemaster Zunzu',
     },
     'Battlemaster Zunzu - East': {
         'name': 'Battlemaster Zunzu (East)',
+        'checker_name': 'Zunzu (East)',
         'emoji': 'BattlemasterZunzu',
         'role': 'Battlemaster Zunzu',
     },
@@ -84,7 +95,8 @@ BOSSES = {
         'name': 'Burster',
         'emoji': 'Burster',
         'role': 'Burster',
-        'price': 400000
+        'price': 400000,
+        'persist': True
     },
     'Captain Jones': {
         'name': 'Captain Jones',
@@ -96,7 +108,8 @@ BOSSES = {
         'name': 'Countess Sorrow',
         'emoji': 'CountessSorrow',
         'role': 'Countess Sorrow',
-        'price': 400000
+        'price': 400000,
+        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 }
     },
     'Crustacea Gigantica': {
         'name': 'Crustacea Gigantica',
@@ -109,13 +122,18 @@ BOSSES = {
         'name': 'Cublarc the Plunderer',
         'emoji': 'CublarcThePlunderer',
         'role': 'Cublarc the Plunderer',
-        'raid': True
+        'raid': True,
+        'raid_msg': None
     },
     'Devovorga': {
         'name': 'Devovorga',
         'emoji': 'Devovorga',
         'role': 'Devovorga',
-        'raid': True
+        'raid': True,
+        'raid_msg': ("1. The mutation of Devovorga goes on! Fight her back!\n"
+                    "2. The mutation of Devovorga has been stopped - but her essence was shattered once again and formed incarnations!\n"
+                    "3. The incarnations of Devovorga have been thrown back into their abyss!\n"
+                    "4. You destroyed Devovorga's cocoon - but not in time to stop her transformation. Kill her - or the world as you know it will end.")
     },
     'Dharalion': {
         'name': 'Dharalion',
@@ -140,7 +158,9 @@ BOSSES = {
         'name': 'Dracola',
         'emoji': 'Dracola',
         'role': 'Dracola',
-        'price': 400000
+        'price': 400000,
+        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 },
+        'unknown_after_days': 39
     },
     'Draptor': {
         'name': 'Draptor',
@@ -151,7 +171,8 @@ BOSSES = {
         'name': 'Dreadful Disruptor',
         'emoji': 'DreadfulDisruptor',
         'role': 'Dreadful Disruptor',
-        'price': 400000
+        'price': 400000,
+        'persist': True
     },
     'Dreadmaw': {
         'name': 'Dreadmaw',
@@ -179,27 +200,37 @@ BOSSES = {
         'name': 'Feroxa',
         'emoji': 'Feroxa',
         'role': 'Feroxa',
-        'raid': True
+        'raid': True,
+        'raid_msg': ("1. Grimvale drowns in werecreatures as the full moon reaches its apex and ancient evil returns.\n"
+                     "2. [+16-18 min] Half of the current full moon is visible now, there are still a lot of clouds in front of it.\n"
+                    "3. [+4 min] The full moon is completely exposed: Feroxa awaits!\n"
+                    "4. [+10 min] Feroxa spawns")
     },
     'Ferumbras': {
         'name': 'Ferumbras',
         'emoji': 'Ferumbras',
         'role': 'Ferumbras',
-        'raid': True
+        'raid': True,
+        'raid_msg': ("00:00:00 The seals on Ferumbras' old citadel are glowing. Prepare for HIS return, mortals.\n"
+                     "00:10:00 Ferumbras' return is at hand. The Edron Academy calls for heroes to fight that evil.\n"
+                     "00:20:00 Ferumbras has returned to his citadel once more. Stop him before it is too late.")
     },
     'Flamecaller Zazrak': {
         'name': 'Flamecaller Zazrak',
+        'checker_name': 'Zazrak',
         'emoji': 'FlamecallerZazrak',
         'role': 'Flamecaller Zazrak',
         'price': 200000
     },
     'Flamecaller Zazrak - Mountain': {
         'name': 'Flamecaller Zazrak (Mountain)',
+        'checker_name': 'Zazrak (Mountain)',
         'emoji': 'FlamecallerZazrak',
         'role': 'Flamecaller Zazrak',
     },
     'Flamecaller Zazrak - Dojo': {
         'name': 'Flamecaller Zazrak (Dojo)',
+        'checker_name': 'Zazrak (Dojo)',
         'emoji': 'FlamecallerZazrak',
         'role': 'Flamecaller Zazrak',
     },
@@ -240,19 +271,23 @@ BOSSES = {
         'name': "Gaz'haragoth",
         'emoji': 'Gazharagoth',
         'role': "Gaz'haragoth",
-        'raid': True
+        'raid': True,
+        'raid_msg': "Gaz'haragoth will shatter your dreams in a barrage of nightmares!"
     },
     'General Murius': {
         'name': 'General Murius',
         'emoji': 'GeneralMurius',
         'role': 'General Murius',
-        'price': 200000
+        'price': 200000,
+        'unknown_after_days': 17
     },
     'Ghazbaran': {
         'name': 'Ghazbaran',
         'emoji': 'Ghazbaran',
         'role': 'Ghazbaran',
-        'raid': True
+        'raid': ("00:00:00 An ancient evil is awakening in the mines beneath Hrodmir.\n"
+                "00:10:00 Demonic entities are entering the mortal realm in the Hrodmir mines.\n"
+                "00:20:00 The demonic master has revealed itself in the mines of Hrodmir.")
     },
     'Grandfather Tridian': {
         'name': 'Grandfather Tridian',
@@ -264,7 +299,11 @@ BOSSES = {
         'name': 'Grand Mother Foulscale',
         'emoji': 'GrandMotherFoulscale',
         'role': 'Grand Mother Foulscale',
-        'raid': True
+        'raid': True,
+        'raid_msg': ("00:00:00 The dragons of the Dragonblaze Mountains have descended to Zao to protect the lizardkin!\n"
+                     "00:15:00 (unannounced raid) First wave of Draptors\n"
+                     "00:20:00 (unannounced raid) Second wave of Draptors\n"
+                     "00:25:00 (unannounced raid) Grand Mother Foulscale and final wave of Draptors\n")
     },
     'Gravelord Oshuran': {
         'name': 'Gravelord Oshuran',
@@ -296,7 +335,8 @@ BOSSES = {
         'name': 'Hatebreeder',
         'emoji': 'Hatebreeder',
         'role': 'Hatebreeder',
-        'price': 400000
+        'price': 400000,
+        'unknown_after_days': 25
     },
     'High Templar Cobrass': {
         'name': 'High Templar Cobrass',
@@ -304,21 +344,21 @@ BOSSES = {
         'role': 'High Templar Cobrass',
         'price': 200000
     },
-    'Hirintor': {
-        'name': 'Hirintor',
-        'emoji': 'Hirintor',
-        'role': 'Hirintor',
+    'Hirintror': {
+        'name': 'Hirintror',
+        'emoji': 'Hirintror',
+        'role': 'Hirintror',
         'price': 200000
     },
-    'Hirintor - Nibelor': {
-        'name': 'Hirintor (Nibelor)',
-        'emoji': 'Hirintor',
-        'role': 'Hirintor',
+    'Hirintror - Nibelor': {
+        'name': 'Hirintror (Nibelor)',
+        'emoji': 'Hirintror',
+        'role': 'Hirintror',
     },
-    'Hirintor - Mines': {
-        'name': 'Hirintor (Mines)',
-        'emoji': 'Hirintor',
-        'role': 'Hirintor',
+    'Hirintror - Mines': {
+        'name': 'Hirintror (Mines)',
+        'emoji': 'Hirintror',
+        'role': 'Hirintror',
     },
     'Jesse the Wicked': {
         'name': 'Jesse the Wicked',
@@ -343,7 +383,9 @@ BOSSES = {
         'name': 'Massacre',
         'emoji': 'Massacre',
         'role': 'Massacre',
-        'price': 400000
+        'price': 400000,
+        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 },
+        'unknown_after_days': 39
     },
     'Mawhawk': {
         'name': 'Mawhawk',
@@ -361,7 +403,10 @@ BOSSES = {
         'name': 'Morgaroth',
         'emoji': 'Morgaroth',
         'role': 'Morgaroth',
-        'raid': True
+        'raid': True,
+        'raid_msg': ("00:00:00 The ancient volcano on Goroma slowly becomes active once again.\n"
+                     "00:06:00 There is an evil presence at the volcano of Goroma.\n"
+                     "00:12:00 Evil Cultists have called an ancient evil into the volcano on Goroma. Beware of its power mortals.")
     },
     'Mornenion': {
         'name': 'Mornenion',
@@ -373,19 +418,23 @@ BOSSES = {
         'name': 'Morshabaal',
         'emoji': 'Morshabaal',
         'role': 'Morshabaal',
-        'raid': True
+        'raid': True,
+        'raid_msg': "00:00:00 Beware mortals! Orshabaal's brother, the infamous Morshabaal is out for revenge and will spread fear for his family once again!"
     },
     'Mr. Punish': {
         'name': 'Mr. Punish',
         'emoji': 'MrPunish',
         'role': 'Mr. Punish',
-        'price': 400000
+        'price': 400000,
+        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 },
+        'unknown_after_days': 39
     },
     'Ocyakao': {
         'name': 'Ocyakao',
         'emoji': 'Ocyakao',
         'role': 'Ocyakao',
-        'price': 200000
+        'price': 200000,
+        'unknown_after_days': 27
     },
     'Omrafir': {
         'name': 'Omrafir',
@@ -403,7 +452,10 @@ BOSSES = {
         'name': 'Orshabaal',
         'emoji': 'Orshabaal',
         'role': 'Orshabaal',
-        'raid': True
+        'raid': True,
+        'raid_msg': ("00:00:00 Orshabaal's minions are working on his return to the World. LEAVE Edron at once, mortals.\n"
+                     "00:03:20: Orshabaal is about to make his way into the mortal realm. Run for your lives!\n"
+                     "00:06:40: Orshabaal has been summoned from hell to plague the lands of mortals again.")
     },
     'Robby the Reckless': {
         'name': 'Robby the Reckless',
@@ -454,6 +506,10 @@ BOSSES = {
         'emoji': 'SirLeopold',
         'role': 'Sir Leopold',
         'raid': True,
+        'raid_msg': ("00:00:00 Once more, the sinister Sir Leopold leads his henchmen out of the book pages to wreak havoc.\n"
+                     "00:10:00 (unannounced raid)\n"
+                     "00:20:00 (unannounced raid)\n"
+                     "00:30:00 (unannounced raid) Sir Leopold appears"),
         'serversave': True
     },
     'Sir Valorcrest': {
@@ -478,13 +534,17 @@ BOSSES = {
         'name': 'The Big Bad One',
         'emoji': 'TheBigBadOne',
         'role': 'The Big Bad One',
-        'price': 200000
+        'price': 200000,
+        'unknown_after_days': 20
     },
     'The Blightfather': {
         'name': 'The Blightfather',
         'emoji': 'TheBlightfather',
         'role': 'The Blightfather',
-        'raid': True
+        'raid': True,
+        'raid_msg': ("00:00:00 Like a swarm of locusts the dreaded lancer beetles are pouring over the fertile parts of Zao.\n"
+                     "00:15:00 (unannounced raid)\n"
+                     "00:30:00 (unannounced raid) The Blightfather spawns")
     },
     'The Evil Eye': {
         'name': 'The Evil Eye',
@@ -502,7 +562,9 @@ BOSSES = {
         'name': 'The Handmaiden',
         'emoji': 'TheHandmaiden',
         'role': 'The Handmaiden',
-        'price': 200000
+        'price': 200000,
+        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 },
+        'unknown_after_days': 39
     },
     'The Hungerer': {
         'name': 'The Hungerer',
@@ -514,7 +576,9 @@ BOSSES = {
         'name': 'The Imperor',
         'emoji': 'TheImperor',
         'role': 'The Imperor',
-        'price': 400000
+        'price': 400000,
+        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 },
+        'unknown_after_days': 39
     },
     'The Manhunter': {
         'name': 'The Manhunter',
@@ -538,13 +602,16 @@ BOSSES = {
         'name': 'The Pale Count',
         'emoji': 'ThePaleCount',
         'role': 'The Pale Count',
-        'raid': True
+        'raid': True,
+        'raid_msg': "00:00:00 The Pale Count has risen from his crypt deep under Drefia. Blood will flow."
     },
     'The Plasmother': {
         'name': 'The Plasmother',
         'emoji': 'ThePlasmother',
         'role': 'The Plasmother',
-        'price': 600000
+        'price': 600000,
+        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 },
+        'unknown_after_days': 39
     },
     'The Voice of Ruin': {
         'name': 'The Voice of Ruin',
@@ -572,7 +639,10 @@ BOSSES = {
         'name': 'Troll Guard',
         'emoji': 'TrollGuard',
         'role': 'Troll Guard',
-        'raid': True
+        'raid': True,
+        'raid_msg': ("00:00:00 Trolls trolling north-west of Carlin!\n"
+                     "00:02:00 Even more Trolls north-west of Carlin!\n"
+                     "00:03:00 Beware! Troll Champions north-west of Carlin!")
     },
     'Tyrn': {
         'name': 'Tyrn',
@@ -606,7 +676,8 @@ BOSSES = {
         'name': 'Warlord Ruzad',
         'emoji': 'WarlordRuzad',
         'role': 'Warlord Ruzad',
-        'price': 200000
+        'price': 200000,
+        'unknown_after_days': 25
     },
     'White Pale': {
         'name': 'White Pale',
@@ -638,7 +709,10 @@ BOSSES = {
         'name': 'Willi Wasp',
         'emoji': 'WilliWasp',
         'role': 'Willi Wasp',
-        'raid': True
+        'raid': True,
+        'raid_msg': ("00:00:00 Some wasps have been found north of Carlin. There is some loud buzzing in the air.\n"
+                     "00:04:10 Buzzing madness north of Carlin! Be careful if you're allergic!\n"
+                     "00:05:00 Willi Wasp the Wicked has arrived!")
     },
     'Xenia': {
         'name': 'Xenia',
@@ -669,7 +743,9 @@ BOSSES = {
         'name': 'Zarabustor',
         'emoji': 'Zarabustor',
         'role': 'Zarabustor',
-        'price': 600000
+        'price': 600000,
+        'check_thresholds': { 'warn': 7, 'alert': 15, 'reset': 30 },
+        'unknown_after_days': 25
     },
     'Zevelon Duskbringer': {
         'name': 'Zevelon Duskbringer',
@@ -681,13 +757,21 @@ BOSSES = {
         'name': 'Zomba',
         'emoji': 'Zomba',
         'role': 'Zomba',
-        'raid': True
+        'raid': True,
+        'raid_msg': ("00:00:00 Hungry lions scout the western Darashian desert. Travellers beware!\n"
+                     "00:04:10 Packs of hungry lions stalk Darashia's western desert. Be on your guard!\n"
+                     "00:05:00 Hear the roar of Zomba, king of the lions, roaming the Darashia desert!")
     },
     'Zulazza the Corruptor': {
         'name': 'Zulazza the Corruptor',
         'emoji': 'ZulazzaTheCorruptor',
         'role': 'Zulazza the Corruptor',
-        'raid': True
+        'raid': True,
+        'raid_msg': ("00:00:00 A massive orc force is gathering at the gates of Zzaion.\n"
+                     "00:03:00 Orc reinforcements have arrived at the gates of Zzaion! The gates are under heavy attack!\n"
+                     "00:10:00 More orc reinforcements have arrived at the gates of Zzaion! The gates are under heavy attack!\n"
+                     "00:20:00 The gates to Zzaion have been breached! Orcs are invading the city!\n"
+                     "00:30:00 More orcs have arrived in Zzaion! The city is under attack! Strong lizard leaders have come to defend the city.")
     },
     'Zushuka': {
         'name': 'Zushuka',

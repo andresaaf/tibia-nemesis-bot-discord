@@ -4,7 +4,7 @@ from pathlib import Path
 import os
 from Database import Database
 
-from features import RoleHandler, BossAnnouncer, PriceList
+from features import RoleHandler, BossAnnouncer, PriceList, Checker
 
 logging.basicConfig(level=logging.INFO)
 
@@ -21,8 +21,9 @@ class GolluxBot(discord.Client):
         self._app_emojis = {}
 
         self.features = [
-            #PriceList(self),
-            BossAnnouncer(self),
+            PriceList(self),
+            Checker(self),
+            #BossAnnouncer(self),
             #RoleHandler(self),
         ]
 

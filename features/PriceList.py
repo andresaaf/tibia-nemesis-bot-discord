@@ -157,15 +157,11 @@ class PriceList(IFeature):
         """Called when the bot is ready."""
         if not self._cmd_registered:
             @app_commands.command(name="setuppricelist", description="Setup price list in the current channel")
+            @app_commands.default_permissions(manage_channels=True)
+            @app_commands.checks.has_permissions(manage_channels=True)
             async def setup_pricelist(interaction: discord.Interaction):
                 if not interaction.guild or not interaction.channel:
                     await interaction.response.send_message("This command must be used in a server channel.", ephemeral=True)
-                    return
-                    
-                # Check permissions
-                member = interaction.guild.get_member(interaction.user.id)
-                if not member or not member.guild_permissions.manage_channels:
-                    await interaction.response.send_message("You need the Manage Channels permission to run this command.", ephemeral=True)
                     return
                     
                 # Check if channel is already registered
@@ -193,15 +189,11 @@ class PriceList(IFeature):
                 logger.info(f"Price list set up in channel {interaction.channel.id} with {len(message_ids)} message(s)")
             
             @app_commands.command(name="removepricelist", description="Remove price list from the current channel")
+            @app_commands.default_permissions(manage_channels=True)
+            @app_commands.checks.has_permissions(manage_channels=True)
             async def remove_pricelist(interaction: discord.Interaction):
                 if not interaction.guild or not interaction.channel:
                     await interaction.response.send_message("This command must be used in a server channel.", ephemeral=True)
-                    return
-                    
-                # Check permissions
-                member = interaction.guild.get_member(interaction.user.id)
-                if not member or not member.guild_permissions.manage_channels:
-                    await interaction.response.send_message("You need the Manage Channels permission to run this command.", ephemeral=True)
                     return
                     
                 channel_id = interaction.channel.id
