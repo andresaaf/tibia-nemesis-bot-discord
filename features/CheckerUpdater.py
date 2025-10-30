@@ -80,24 +80,30 @@ class CheckerUpdater:
 
             for name, pct in spawnables:
                 canon = self._canonicalize_name(name)
-                if canon:
-                    allowed.add(canon)
-                    canon_list.append((canon, pct))
+                if not canon:
+                    continue
+                # Enforce per-boss unknown range: never show before min_days
+                try:
+                    meta = BOSSES.get(canon, {})
+                    min_days, max_days = self._get_unknown_range(meta)
+                    dval = canon_days.get(canon)
+                    if dval is not None and min_days is not None and dval < min_days:
+                        continue  # skip below-min entries
+                except Exception:
+                    pass
+                allowed.add(canon)
+                canon_list.append((canon, pct))
 
-            # Range sanity: If a boss is not in allowed but days since last kill exceeds a per-boss threshold
-            # (unknown_after_days defined in BOSSES), include it with unknown percentage (None).
+            # Range sanity overrides: always include when days >= max_days
             for canon_name, days in canon_days.items():
                 if canon_name in allowed:
                     continue
-                # Determine threshold: only use when explicitly configured per boss
-                threshold_val: Optional[int] = None
                 try:
                     meta = BOSSES.get(canon_name, {})
-                    if isinstance(meta, dict) and meta.get('unknown_after_days') is not None:
-                        threshold_val = int(meta.get('unknown_after_days'))
+                    _min_days, max_days = self._get_unknown_range(meta)
                 except Exception:
-                    threshold_val = None
-                if threshold_val is not None and days >= threshold_val:
+                    max_days = None
+                if max_days is not None and days >= max_days:
                     allowed.add(canon_name)
                     canon_list.append((canon_name, None))
             self._allowed_today[guild_id] = allowed
@@ -147,6 +153,26 @@ class CheckerUpdater:
             self._canon_map = canon
         return self._canon_map.get(name.lower())
 
+    def _get_unknown_range(self, meta: dict) -> Tuple[Optional[int], Optional[int]]:
+        """Parse per-boss inclusion range controlling days since last kill visibility.
+        Only supports 'inclusion_range' as a list/tuple [min_days, max_days].
+        Returns (min_days, max_days). If not configured or invalid, returns (None, None).
+        """
+        if not isinstance(meta, dict):
+            return None, None
+        val = meta.get('inclusion_range')
+        if val is None:
+            return None, None
+        try:
+            if isinstance(val, (list, tuple)) and len(val) == 2:
+                a, b = int(val[0]), int(val[1])
+                if a > b:
+                    a, b = b, a
+                return a, b
+        except Exception:
+            return None, None
+        return None, None
+
     # --- Public helper to get spawnable bosses with percentages ---
     async def get_spawnables_with_percentages(self, guild_id: int) -> List[Tuple[str, Optional[int]]]:
         """Return list of (boss_name, percent) for bosses that could technically spawn on the guild's world.
@@ -178,21 +204,29 @@ class CheckerUpdater:
                 canon_days[cn] = d
         for name, pct in raw_list:
             canon = self._canonicalize_name(name)
-            if canon:
-                out.append((canon, pct))
+            if not canon:
+                continue
+            # Enforce never show before min_days
+            try:
+                meta = BOSSES.get(canon, {})
+                min_days, max_days = self._get_unknown_range(meta)
+                dval = canon_days.get(canon)
+                if dval is not None and min_days is not None and dval < min_days:
+                    continue
+            except Exception:
+                pass
+            out.append((canon, pct))
         # Apply range sanity on cache-miss path as well, only if per-boss threshold is set
         current_allowed = {n for (n, _p) in out}
         for canon_name, days in canon_days.items():
             if canon_name in current_allowed:
                 continue
-            threshold_val: Optional[int] = None
             try:
                 meta = BOSSES.get(canon_name, {})
-                if isinstance(meta, dict) and meta.get('unknown_after_days') is not None:
-                    threshold_val = int(meta.get('unknown_after_days'))
+                _min_days, max_days = self._get_unknown_range(meta)
             except Exception:
-                threshold_val = None
-            if threshold_val is not None and days >= threshold_val:
+                max_days = None
+            if max_days is not None and days >= max_days:
                 out.append((canon_name, None))
         # Cache it
         self._spawnables[guild_id] = list(out)

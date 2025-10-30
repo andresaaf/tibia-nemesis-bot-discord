@@ -3,6 +3,7 @@ import discord
 from discord import app_commands
 import asyncio
 import logging
+import hashlib
 from typing import Dict, List, Set, Tuple, Union, Optional
 from datetime import datetime, timezone, time as dtime, timedelta
 from .Bosses import BOSSES
@@ -100,6 +101,7 @@ AREAS = {
 }
 
 MAX_HISTORY = 25
+MAX_CUSTOM_ID_LENGTH = 100  # Discord custom_id max length
 
 def _now_unix() -> int:
     return int(datetime.now(timezone.utc).timestamp())
@@ -116,6 +118,7 @@ class Checker(IFeature):
         # message_id -> area name
         self._message_area: Dict[int, str] = {}
         self._history: List[Tuple[Union[int, str], str, str, str]] = []
+        self._history_lock: asyncio.Lock = asyncio.Lock()  # reduce contention for history updates/reads
         self._task: Optional[asyncio.Task] = None
         self._tick_task: Optional[asyncio.Task] = None
         self._checker_channel_id: Optional[int] = None
@@ -146,6 +149,11 @@ class Checker(IFeature):
         self._messages: Dict[int, discord.Message] = {}
         # Last rendered style state per area message: msg_id -> { boss_key: (style_value, emoji) }
         self._last_style_state: Dict[int, Dict[str, Tuple[int, str]]] = {}
+        # Stable short IDs for areas and boss keys to keep custom_id short
+        self._area_id_map: Dict[str, str] = {name: hashlib.sha1(name.encode("utf-8")).hexdigest()[:8] for name in AREAS.keys()}
+        self._area_id_rev: Dict[str, str] = {v: k for k, v in self._area_id_map.items()}
+        self._boss_id_map: Dict[str, str] = {}
+        self._boss_id_rev: Dict[str, str] = {}
 
     async def on_ready(self):
         if self._ready:
@@ -307,59 +315,95 @@ class Checker(IFeature):
                 logger.exception("Checker: failed to get channel %s", channel_id)
                 return
 
-        # Collect bot messages (most recent first)
-        bot_msgs: List[discord.Message] = []
-        try:
-            async for msg in channel.history(limit=500):
-                if msg.author and msg.author.id == self.client.user.id:
-                    bot_msgs.append(msg)
-        except Exception:
-            logger.exception("Checker: failed to scan channel history")
+        guild_id = getattr(channel, 'guild', None).id if getattr(channel, 'guild', None) else 0
+        # Try to load persisted message IDs from DB to avoid scanning
+        id_map = self._db_load_message_ids(guild_id)
 
-        # Find or create first message (embed titled "Boss Checks")
         first_msg: Optional[discord.Message] = None
-        for m in bot_msgs:
-            emb = (m.embeds[0] if m.embeds else None)
-            if emb and getattr(emb, "title", None) == "Boss Checks":
-                first_msg = m
-                break
+        existing_area_msgs: Dict[str, discord.Message] = {}
+        existing_raids_msg: Optional[discord.Message] = None
 
+        # Attempt to fetch messages by ID where present
+        try:
+            if 'FIRST' in id_map:
+                try:
+                    first_msg = await channel.fetch_message(id_map['FIRST'])
+                    self._messages[first_msg.id] = first_msg
+                except Exception:
+                    first_msg = None
+            for area_name in AREAS.keys():
+                mid = id_map.get(area_name)
+                if mid:
+                    try:
+                        m = await channel.fetch_message(mid)
+                        existing_area_msgs[area_name] = m
+                        self._messages[m.id] = m
+                        self._message_area[m.id] = area_name
+                        self._area_msg_ids[area_name] = m.id
+                    except Exception:
+                        pass
+            if 'RAIDS' in id_map:
+                try:
+                    existing_raids_msg = await channel.fetch_message(id_map['RAIDS'])
+                    self._messages[existing_raids_msg.id] = existing_raids_msg
+                except Exception:
+                    existing_raids_msg = None
+        except Exception:
+            logger.exception("Checker: error fetching messages by id")
+
+        # Fallback to history scan if we couldn't find existing messages
+        if first_msg is None or not existing_area_msgs:
+            bot_msgs: List[discord.Message] = []
+            try:
+                async for msg in channel.history(limit=500):
+                    if msg.author and msg.author.id == self.client.user.id:
+                        bot_msgs.append(msg)
+            except Exception:
+                logger.exception("Checker: failed to scan channel history")
+
+            # Find or create first message (embed titled "Boss Checks")
+            for m in bot_msgs:
+                emb = (m.embeds[0] if m.embeds else None)
+                if emb and getattr(emb, "title", None) == "Boss Checks":
+                    first_msg = m
+                    self._db_save_message_id(guild_id, 'FIRST', m.id)
+                    break
+
+            # Map existing area and raids messages
+            try:
+                area_titles = set(AREAS.keys())
+                for m in bot_msgs:
+                    if first_msg and m.id == first_msg.id:
+                        continue
+                    content = (m.content or "").strip()
+                    if content.startswith("**") and content.endswith("**"):
+                        title = content.strip("*").strip()
+                        if title in area_titles and title not in existing_area_msgs:
+                            existing_area_msgs[title] = m
+                            self._messages[m.id] = m
+                            self._message_area[m.id] = title
+                            self._area_msg_ids[title] = m.id
+                            self._db_save_message_id(guild_id, title, m.id)
+                            continue
+                    if content.startswith("**Possible Raids**") and existing_raids_msg is None:
+                        existing_raids_msg = m
+                        self._messages[m.id] = m
+                        self._db_save_message_id(guild_id, 'RAIDS', m.id)
+            except Exception:
+                logger.exception("Checker: failed to map existing area/raids messages")
+
+        # Ensure first message exists
         try:
             if first_msg is None:
                 sent = await channel.send(embed=self._build_first_embed())
                 first_msg = sent
-            # cache first message object
+                self._db_save_message_id(guild_id, 'FIRST', sent.id)
             self._messages[first_msg.id] = first_msg
         except Exception:
             logger.exception("Checker: failed to create first message")
             return
 
         self._first_msg_id = first_msg.id
-
-        # Build mapping of existing area messages to reuse, and detect existing raids message
-        existing_area_msgs: Dict[str, discord.Message] = {}
-        existing_raids_msg: Optional[discord.Message] = None
-        try:
-            area_titles = set(AREAS.keys())
-            for m in bot_msgs:
-                if m.id == self._first_msg_id:
-                    continue
-                # An area message has plain text content "**{area}**"
-                content = (m.content or "").strip()
-                if content.startswith("**") and content.endswith("**"):
-                    # Strip leading/trailing **
-                    title = content.strip("*").strip()
-                    if title in area_titles and title not in existing_area_msgs:
-                        existing_area_msgs[title] = m
-                        # cache the message object
-                        self._messages[m.id] = m
-                        continue
-                # A raids message starts with the title
-                if content.startswith("**Possible Raids**") and existing_raids_msg is None:
-                    existing_raids_msg = m
-                    self._messages[m.id] = m
-        except Exception:
-            logger.exception("Checker: failed to map existing area/raids messages")
 
         # Start with empty active maps (no persistent button state)
         area_active_map: Dict[str, Dict[str, int]] = {area: {} for area in AREAS.keys()}
@@ -382,13 +426,14 @@ class Checker(IFeature):
             logger.exception("Checker: failed to get spawnables; defaulting to empty map")
 
         # Update or create area messages (bold area name + buttons filtered by today's allowed bosses). Track active sets by message id.
+        allowed: Set[str] = set(percent_map.keys())
         for area, bosses in AREAS.items():
             # Skip areas that have no configured bosses
             if not bosses:
                 continue
             active = area_active_map.get(area, {})
             content = self._build_area_content(area, bosses, active)
-            view = self._view_for_area(area, bosses, active, channel.guild.id, percent_map)
+            view = self._view_for_area(area, bosses, active, channel.guild.id, percent_map, allowed)
             existing = existing_area_msgs.get(area)
             if existing is not None:
                 # Edit in place
@@ -397,10 +442,11 @@ class Checker(IFeature):
                     self._active[existing.id] = dict(self._active.get(existing.id, {})) or {}
                     self._message_area[existing.id] = area
                     self._area_msg_ids[area] = existing.id
+                    self._db_save_message_id(guild_id, area, existing.id)
                     # cache and record last style state
                     self._messages[existing.id] = existing
                     try:
-                        style_state = self._compute_area_style_state(area, bosses, self._active.get(existing.id, {}), channel.guild.id, percent_map)
+                        style_state = self._compute_area_style_state(area, bosses, self._active.get(existing.id, {}), channel.guild.id, percent_map, allowed)
                         self._last_style_state[existing.id] = style_state
                     except Exception:
                         pass
@@ -412,10 +458,11 @@ class Checker(IFeature):
                     self._active[sent.id] = dict(active)
                     self._message_area[sent.id] = area
                     self._area_msg_ids[area] = sent.id
+                    self._db_save_message_id(guild_id, area, sent.id)
                     # cache and record last style state
                     self._messages[sent.id] = sent
                     try:
-                        style_state = self._compute_area_style_state(area, bosses, self._active.get(sent.id, {}), channel.guild.id, percent_map)
+                        style_state = self._compute_area_style_state(area, bosses, self._active.get(sent.id, {}), channel.guild.id, percent_map, allowed)
                         self._last_style_state[sent.id] = style_state
                     except Exception:
                         pass
@@ -431,12 +478,14 @@ class Checker(IFeature):
                         await existing_raids_msg.edit(content=raids_text)
                         self._raids_msg_id = existing_raids_msg.id
                         self._messages[existing_raids_msg.id] = existing_raids_msg
+                        self._db_save_message_id(guild_id, 'RAIDS', existing_raids_msg.id)
                     except Exception:
                         logger.exception("Checker: failed to edit Possible Raids message")
                 else:
                     sent = await channel.send(raids_text)
                     self._raids_msg_id = sent.id
                     self._messages[sent.id] = sent
+                    self._db_save_message_id(guild_id, 'RAIDS', sent.id)
         except Exception:
             logger.exception("Checker: failed to send/edit Possible Raids message")
 
@@ -472,12 +521,16 @@ class Checker(IFeature):
 
     def _build_first_embed(self) -> discord.Embed:
         emb = discord.Embed(title="Boss Checks", description="", color=0x0066CC)
+        # Fast path when no history
         if not self._history:
             emb.description = "No checks yet."
             emb.set_footer(text=f"Updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z')}")
             return emb
-
-        recent = self._history[:MAX_HISTORY]
+        # Non-blocking snapshot; writes are rare and protected by a lock
+        try:
+            recent = list(self._history[:MAX_HISTORY])
+        except Exception:
+            recent = []
         rows = list(reversed(recent))  # oldest -> newest
 
         boss_col: List[str] = []
@@ -525,7 +578,9 @@ class Checker(IFeature):
                         except Exception:
                             em_obj = None
                     em_text = f"{em_obj} " if em_obj else ""
-                    entries.append((pct, f"{em_text}{base_name} [**{pct}%**]"))
+                    # Only show the percentage when above 2%
+                    text = f"{em_text}{base_name} [**{pct}%**]" if pct > 2 else f"{em_text}{base_name}"
+                    entries.append((pct, text))
                     seen.add(base_name)
             except Exception:
                 continue
@@ -573,10 +628,11 @@ class Checker(IFeature):
             pass
         return self._boss_to_name(entry)
 
-    def _view_for_area(self, area: str, bosses: List[str], active: Dict[str, int], guild_id: int, percent_map: Dict[str, Optional[int]]) -> discord.ui.View:
+
+    def _view_for_area(self, area: str, bosses: List[str], active: Dict[str, int], guild_id: int, percent_map: Dict[str, Optional[int]], allowed: Optional[Set[str]] = None) -> discord.ui.View:
         view = discord.ui.View(timeout=None)
         # Allowed based on spawnables map (bosses that could spawn). Value is percent or None.
-        allowed = set(percent_map.keys())
+        allowed = set(percent_map.keys()) if allowed is None else allowed
         now_ts = _now_unix()
 
         for b in bosses:
@@ -593,7 +649,7 @@ class Checker(IFeature):
             # If not persistent and not allowed by base boss name, skip
             if not persistent and base_name not in allowed:
                 continue
-            key = f"{area}|{boss_key}"
+            key = self._make_active_key(area, boss_key)
             last_ts = active.get(key)
             # Per-boss prune on reset
             if last_ts and (now_ts - last_ts) >= reset_s:
@@ -603,11 +659,11 @@ class Checker(IFeature):
                     pass
                 last_ts = None
             style, emoji = self._style_and_emoji_for_ts(last_ts, now_ts, warn_s, alert_s, reset_s)
-            cid = f"checker:{area}:{boss_key}"
+            cid = self._make_custom_id(area, boss_key)
             # Look up percentage by base boss name
             pct = percent_map.get(base_name)
-            # Persistent bosses never show a percentage label
-            base_label = name if persistent else (f"{name} [{pct}%]" if isinstance(pct, int) else name)
+            # Persistent bosses never show a percentage label; only show % when >2
+            base_label = name if persistent else (f"{name} [{pct}%]" if (isinstance(pct, int) and pct > 2) else name)
             label_text = f"{emoji} {base_label}" if emoji else base_label
             view.add_item(discord.ui.Button(style=style, label=label_text, custom_id=cid))
         return view
@@ -662,10 +718,10 @@ class Checker(IFeature):
         if not custom_id or not custom_id.startswith("checker:"):
             return
 
-        parts = custom_id.split(":", 2)
-        if len(parts) != 3:
+        parsed = self._parse_custom_id(custom_id)
+        if not parsed:
             return
-        _, area, boss = parts
+        area, boss = parsed
         msg = getattr(interaction, "message", None)
         if msg is None:
             return
@@ -687,7 +743,7 @@ class Checker(IFeature):
             active = self._active.get(msg.id)
             if active is None or not isinstance(active, dict):
                 active = {}
-            key = f"{area}|{boss}"
+            key = self._make_active_key(area, boss)
             if key in active:
                 try:
                     del active[key]
@@ -704,12 +760,13 @@ class Checker(IFeature):
         except Exception:
             logger.exception("Checker: failed to schedule debounced area update for %s", msg.id)
 
-        # record check in history (newest first)
+        # record check in history (newest first) using BOSSES key as before
         user_display = getattr(interaction.user, "display_name", None) or getattr(interaction.user, "name", str(interaction.user))
         ts = _now_unix()
-        self._history.insert(0, (ts, user_display, area, boss))
-        if len(self._history) > MAX_HISTORY:
-            self._history = self._history[:MAX_HISTORY]
+        async with self._history_lock:
+            self._history.insert(0, (ts, user_display, area, boss))
+            if len(self._history) > MAX_HISTORY:
+                self._history = self._history[:MAX_HISTORY]
 
         # Debounce the history embed update as well
         try:
@@ -767,6 +824,7 @@ class Checker(IFeature):
                 # Do NOT refresh spawnable percentages every minute; use cached map
                 guild_id = getattr(channel, 'guild', None).id if getattr(channel, 'guild', None) else 0
                 pmap: Dict[str, Optional[int]] = self._get_cached_percent_map(guild_id) or {}
+                allowed = set(pmap.keys())
 
                 now_ts = _now_unix()
                 for msg_id, active_map in list(self._active.items()):
@@ -795,7 +853,7 @@ class Checker(IFeature):
                         self._locks[msg_id] = lock
                     # Compute current style state and compare with last
                     try:
-                        new_state = self._compute_area_style_state(area, bosses, active_map, guild_id, pmap)
+                        new_state = self._compute_area_style_state(area, bosses, active_map, guild_id, pmap, allowed)
                         old_state = self._last_style_state.get(msg_id)
                         if old_state is not None and old_state == new_state:
                             continue  # No visual change needed
@@ -810,7 +868,7 @@ class Checker(IFeature):
                                 msg_obj = await channel.fetch_message(msg_id)
                                 self._messages[msg_id] = msg_obj
                             content = self._build_area_content(area, bosses, active_map)
-                            view = self._view_for_area(area, bosses, active_map, guild_id, pmap)
+                            view = self._view_for_area(area, bosses, active_map, guild_id, pmap, allowed)
                             await msg_obj.edit(content=content, view=view)
                             if new_state is not None:
                                 self._last_style_state[msg_id] = new_state
@@ -839,10 +897,10 @@ class Checker(IFeature):
         except Exception:
             return None
 
-    def _compute_area_style_state(self, area: str, bosses: List[str], active: Dict[str, int], guild_id: int, percent_map: Dict[str, Optional[int]]) -> Dict[str, Tuple[int, str]]:
+    def _compute_area_style_state(self, area: str, bosses: List[str], active: Dict[str, int], guild_id: int, percent_map: Dict[str, Optional[int]], allowed: Optional[Set[str]] = None) -> Dict[str, Tuple[int, str]]:
         """Compute the style state (style.value, emoji) for all buttons that would be rendered for an area."""
         state: Dict[str, Tuple[int, str]] = {}
-        allowed = set(percent_map.keys())
+        allowed = set(percent_map.keys()) if allowed is None else allowed
         now_ts = _now_unix()
         for b in bosses:
             persistent = isinstance(b, dict) and bool(b.get('persist', False))
@@ -855,7 +913,7 @@ class Checker(IFeature):
                 base_name = name
             if not persistent and base_name not in allowed:
                 continue
-            key = f"{area}|{boss_key}"
+            key = self._make_active_key(area, boss_key)
             last_ts = active.get(key)
             if last_ts and (now_ts - last_ts) >= reset_s:
                 last_ts = None
@@ -882,16 +940,17 @@ class Checker(IFeature):
                 bosses = AREAS.get(area, [])
                 # Use cached percent map if available; avoid network calls on rapid clicks
                 pmap = self._get_cached_percent_map(guild_id) or {}
+                allowed = set(pmap.keys())
                 # Build prospective style state to decide if an edit is necessary
                 try:
-                    new_state = self._compute_area_style_state(area, bosses, active_map, guild_id, pmap)
+                    new_state = self._compute_area_style_state(area, bosses, active_map, guild_id, pmap, allowed)
                     old_state = self._last_style_state.get(msg_id)
                     if old_state is not None and old_state == new_state:
                         return  # Skip edit; no visual change
                 except Exception:
                     new_state = None
                 content = self._build_area_content(area, bosses, active_map)
-                view = self._view_for_area(area, bosses, active_map, guild_id, pmap)
+                view = self._view_for_area(area, bosses, active_map, guild_id, pmap, allowed)
                 # Acquire the same lock to avoid racing with tick loop
                 lock = self._locks.get(msg_id)
                 if lock is None:
@@ -964,16 +1023,87 @@ class Checker(IFeature):
                         )
                     except Exception:
                         pass
-                except Exception:
+                except Exception as e:
                     logger.exception("Checker: debounced history embed update failed")
                     # If rate limited, increase backoff
-                    e = logging.root.handlers and None  # noop to keep linter happy about 'e' scope
                     try:
-                        # We don't have the exception object here easily; leave adaptive change to area updates
-                        pass
+                        status = getattr(e, 'status', None)
+                        if isinstance(e, discord.HTTPException) and status == 429:
+                            self._embed_debounce_backoff_sec = min(
+                                self._embed_debounce_max_delay_sec,
+                                max(self._embed_debounce_backoff_sec, self._embed_debounce_base_delay_sec) * 2.0,
+                            )
                     except Exception:
                         pass
             finally:
                 self._embed_update_task = None
 
         self._embed_update_task = asyncio.create_task(_runner())
+
+    # --------------------- Helpers and DB persistence ---------------------
+    def _make_active_key(self, area: str, boss_key: str) -> str:
+        return f"{area}|{boss_key}"
+
+    def _make_custom_id(self, area: str, boss_key: str) -> str:
+        area_id = self._area_id_map.get(area, area)
+        cid = f"checker:{area_id}:{boss_key}"
+        if len(cid) <= MAX_CUSTOM_ID_LENGTH:
+            return cid
+        # Hash boss key when needed and remember mapping
+        bid = self._boss_id_map.get(boss_key)
+        if not bid:
+            bid = hashlib.sha1(boss_key.encode("utf-8")).hexdigest()[:8]
+            self._boss_id_map[boss_key] = bid
+            self._boss_id_rev[bid] = boss_key
+        cid = f"checker:{area_id}:{bid}"
+        return cid[:MAX_CUSTOM_ID_LENGTH]
+
+    def _parse_custom_id(self, cid: str) -> Optional[Tuple[str, str]]:
+        try:
+            if not cid or not cid.startswith("checker:"):
+                return None
+            _pfx, rest = cid.split(":", 1)
+            parts = rest.split(":", 2)
+            if len(parts) != 2:
+                return None
+            aid, bid_or_key = parts
+            area = self._area_id_rev.get(aid, aid)
+            # Prefer direct key; else map hashed id
+            boss_key = bid_or_key if bid_or_key in BOSSES else self._boss_id_rev.get(bid_or_key, bid_or_key)
+            return area, boss_key
+        except Exception:
+            return None
+
+    def _db_init_message_table(self):
+        try:
+            with self.client.db as db:
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS checker_messages (guild_id INTEGER, area TEXT, message_id INTEGER, PRIMARY KEY(guild_id, area))"
+                )
+        except Exception:
+            logger.exception("Checker: failed to init checker_messages table")
+
+    def _db_load_message_ids(self, guild_id: int) -> Dict[str, int]:
+        self._db_init_message_table()
+        mapping: Dict[str, int] = {}
+        try:
+            with self.client.db as db:
+                db.execute("SELECT area, message_id FROM checker_messages WHERE guild_id=?", (guild_id,))
+                rows = db.fetchall() or []
+                for area, mid in rows:
+                    if isinstance(area, str) and isinstance(mid, int):
+                        mapping[area] = mid
+        except Exception:
+            logger.exception("Checker: failed to load message ids from db")
+        return mapping
+
+    def _db_save_message_id(self, guild_id: int, area: str, message_id: int):
+        self._db_init_message_table()
+        try:
+            with self.client.db as db:
+                db.execute(
+                    "INSERT OR REPLACE INTO checker_messages (guild_id, area, message_id) VALUES (?, ?, ?)",
+                    (guild_id, area, int(message_id)),
+                )
+        except Exception:
+            logger.exception("Checker: failed to save message id for %s", area)
