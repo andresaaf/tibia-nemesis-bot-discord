@@ -405,6 +405,7 @@ BOSSES = {
         'emoji': 'Mawhawk',
         'role': 'Mawhawk',
         'serversave': True,
+        'check_thresholds': { 'warn': 1438, 'alert': 1439, 'reset': 1440 },
         'persist': True,
     },
     'Midnight Panther': {

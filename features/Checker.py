@@ -95,6 +95,7 @@ AREAS = {
     ],
     "Others": [
         BOSSES['Bank Robbers (Board)'],
+        BOSSES['Mawhawk'],
         BOSSES['Furyosa'],
         BOSSES['Omrafir'],
     ],
@@ -316,6 +317,12 @@ class Checker(IFeature):
                 return
 
         guild_id = getattr(channel, 'guild', None).id if getattr(channel, 'guild', None) else 0
+
+        # Reset active state for bosses marked serversave=True (daily reset behavior) on any refresh/ensure
+        try:
+            self._prune_serversave_active()
+        except Exception:
+            logger.exception("Checker: failed to prune serversave active states")
         # Try to load persisted message IDs from DB to avoid scanning
         id_map = self._db_load_message_ids(guild_id)
 
@@ -499,6 +506,29 @@ class Checker(IFeature):
         except Exception:
             logger.exception("Checker: failed to update first message %s", self._first_msg_id)
 
+    def _prune_serversave_active(self) -> None:
+        """Clear active markers for bosses that should reset on server save (09:00) or on manual refresh.
+        Uses BOSSES[boss_key]['serversave'] == True.
+        """
+        if not self._active:
+            return
+        for msg_id, active_map in list(self._active.items()):
+            changed = False
+            for k in list(active_map.keys()):
+                try:
+                    _area, boss_key = k.split("|", 1)
+                except Exception:
+                    continue
+                try:
+                    meta = BOSSES.get(boss_key)
+                    if isinstance(meta, dict) and bool(meta.get('serversave', False)):
+                        del active_map[k]
+                        changed = True
+                except Exception:
+                    continue
+            if changed:
+                self._active[msg_id] = active_map
+
     def _parse_history_from_embed(self, embed: discord.Embed) -> List[Tuple[Union[int, str], str, str, str]]:
         hist: List[Tuple[Union[int, str], str, str, str]] = []
         desc = embed.description or ""
@@ -521,12 +551,21 @@ class Checker(IFeature):
 
     def _build_first_embed(self) -> discord.Embed:
         emb = discord.Embed(title="Boss Checks", description="", color=0x0066CC)
+        legend_text = (
+            "Click the button after checking a boss.\n\n"
+            "Boss Check Legend:\n"
+            "✅ = up to 15 minutes (Zarabustor 7 minutes | POI 45 minutes)\n"
+            "❕ = at least 15 minutes ago (Zarabustor 7 minutes | POI 45 minutes)\n"
+            "‼️ = at least 30 minutes ago (Zarabustor 15 minutes | POI 90 minutes)\n"
+            "⏰ = over 60 minutes ago (Zarabustor 30 minutes | POI 180 minutes)"
+        )
         # Fast path when no history
         if not self._history:
-            emb.description = "No checks yet."
+            emb.description = f"{legend_text}\n\nNo checks yet."
             emb.set_footer(text=f"Updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z')}")
             return emb
         # Non-blocking snapshot; writes are rare and protected by a lock
+        emb.description = legend_text
         try:
             recent = list(self._history[:MAX_HISTORY])
         except Exception:
