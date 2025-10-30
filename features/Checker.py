@@ -155,6 +155,8 @@ class Checker(IFeature):
         self._area_id_rev: Dict[str, str] = {v: k for k, v in self._area_id_map.items()}
         self._boss_id_map: Dict[str, str] = {}
         self._boss_id_rev: Dict[str, str] = {}
+        # Fury Gate city per guild (Carlin or Thais)
+        self._furygate_city = {}
 
     async def on_ready(self):
         if self._ready:
@@ -246,6 +248,40 @@ class Checker(IFeature):
                             pass
 
                 self.client.tree.add_command(checkerrefresh)
+
+                # Command to set Fury Gate city (Carlin or Thais). Affects Furyosa button label.
+                @app_commands.command(name="furygate", description="Set the Fury Gate city for this server")
+                @app_commands.choices(city=[
+                    app_commands.Choice(name="Carlin", value="Carlin"),
+                    app_commands.Choice(name="Ab'Dendriel", value="Ab'Dendriel"),
+                    app_commands.Choice(name="Kazordoon", value="Kazordoon"),
+                    app_commands.Choice(name="Thais", value="Thais"),
+                    app_commands.Choice(name="Venore", value="Venore"),
+                    app_commands.Choice(name="Edron", value="Edron"),
+                    app_commands.Choice(name="Darashia", value="Darashia"),
+                    app_commands.Choice(name="Ankrahmun", value="Ankrahmun"),
+                    app_commands.Choice(name="Port Hope", value="Port Hope"),
+                    app_commands.Choice(name="Liberty Bay", value="Liberty Bay"),
+                ])
+                async def furygate(interaction: discord.Interaction, city: app_commands.Choice[str]):
+                    if interaction.guild is None:
+                        await interaction.response.send_message("This command must be used in a server.", ephemeral=True)
+                        return
+                    try:
+                        guild_id = interaction.guild.id
+                        self._set_furygate_city(guild_id, city.value)
+                        # Re-render checker messages to update the Furyosa label
+                        await self._ensure_channel_messages_and_update()
+                        user_name = getattr(interaction.user, "display_name", None) or getattr(interaction.user, "name", "User")
+                        await interaction.response.send_message(f"{user_name} changed Fury Gate to {city.value}")
+                    except Exception:
+                        logger.exception("Checker: failed to set Fury Gate city")
+                        try:
+                            await interaction.response.send_message("Failed to set Fury Gate city.", ephemeral=True)
+                        except Exception:
+                            pass
+
+                self.client.tree.add_command(furygate)
             except Exception:
                 logger.exception("Failed to register checker command")
             self._cmd_registered = True
@@ -717,8 +753,17 @@ class Checker(IFeature):
             cid = self._make_custom_id(area, boss_key)
             # Look up percentage by base boss name
             pct = percent_map.get(base_name)
+            # Adjust display name for Furyosa: append current Fury Gate city
+            label_name = name
+            try:
+                if boss_key == 'Furyosa':
+                    city = self._get_furygate_city(guild_id)
+                    if city:
+                        label_name = f"{name} ({city})"
+            except Exception:
+                pass
             # Persistent bosses never show a percentage label; only show % when >2
-            base_label = name if persistent else (f"{name} [{pct}%]" if (isinstance(pct, int) and pct > 2) else name)
+            base_label = label_name if persistent else (f"{label_name} [{pct}%]" if (isinstance(pct, int) and pct > 2) else label_name)
             label_text = f"{emoji} {base_label}" if emoji else base_label
             view.add_item(discord.ui.Button(style=style, label=label_text, custom_id=cid))
         return view
@@ -1157,3 +1202,54 @@ class Checker(IFeature):
                 )
         except Exception:
             logger.exception("Checker: failed to save message id for %s", area)
+
+    # --------------------- Fury Gate persistence ---------------------
+    def _db_init_furygate_table(self):
+        try:
+            with self.client.db as db:
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS furygate (guild_id INTEGER PRIMARY KEY, city TEXT)"
+                )
+        except Exception:
+            logger.exception("Checker: failed to init furygate table")
+
+    def _db_load_furygate_city(self, guild_id: int) -> Optional[str]:
+        self._db_init_furygate_table()
+        try:
+            with self.client.db as db:
+                db.execute("SELECT city FROM furygate WHERE guild_id=?", (guild_id,))
+                row = db.fetchone()
+                if row and isinstance(row[0], str):
+                    return row[0]
+        except Exception:
+            logger.exception("Checker: failed to load furygate city")
+        return None
+
+    def _db_save_furygate_city(self, guild_id: int, city: str) -> None:
+        self._db_init_furygate_table()
+        try:
+            with self.client.db as db:
+                db.execute(
+                    "INSERT OR REPLACE INTO furygate (guild_id, city) VALUES (?, ?)",
+                    (guild_id, city),
+                )
+        except Exception:
+            logger.exception("Checker: failed to save furygate city")
+
+    def _get_furygate_city(self, guild_id: int) -> str:
+        # Default to 'Carlin' if not set
+        try:
+            if guild_id in self._furygate_city:
+                return self._furygate_city[guild_id]
+            city = self._db_load_furygate_city(guild_id)
+            if not city:
+                city = 'Carlin'
+                self._db_save_furygate_city(guild_id, city)
+            self._furygate_city[guild_id] = city
+            return city
+        except Exception:
+            return 'Carlin'
+
+    def _set_furygate_city(self, guild_id: int, city: str) -> None:
+        self._furygate_city[guild_id] = city
+        self._db_save_furygate_city(guild_id, city)
