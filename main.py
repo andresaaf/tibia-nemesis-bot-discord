@@ -23,8 +23,8 @@ class GolluxBot(discord.Client):
         self.features = [
             PriceList(self),
             Checker(self),
-            #BossAnnouncer(self),
-            #RoleHandler(self),
+            BossAnnouncer(self),
+            RoleHandler(self),
         ]
 
     async def _safe_call(self, method_name, *args, **kwargs):

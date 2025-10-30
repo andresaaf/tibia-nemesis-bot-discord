@@ -3,8 +3,9 @@ import discord
 from discord import app_commands
 import logging
 import asyncio
-from typing import Dict, Set
+from typing import Dict, Set, List, Tuple, Union, Optional
 from .Bosses import BOSSES
+from .Checker import Checker
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,7 @@ class BossAnnouncer(IFeature):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._cmd_registered = False
-        # state: message_id -> {creator, role_id, coming:set, ready:set, killed:set, killed_enabled:bool}
+    # state: message_id -> {creator, role_id, coming:list[int], ready:list[int], killed:list[int], killed_enabled:bool}
         self._state: Dict[int, Dict] = {}
         self._locks: Dict[int, asyncio.Lock] = {}
         # channels where /boss is allowed
@@ -43,8 +44,8 @@ class BossAnnouncer(IFeature):
             return
         
         @app_commands.command(name="boss", description="Announce a boss and tag a role. Creates a message with signup buttons.")
-        @app_commands.describe(role="Role to mention in the announcement", )
-        async def boss(interaction: discord.Interaction, role: discord.Role):
+        @app_commands.describe(role="Role to mention in the announcement", message="Optional message to include under the headline")
+        async def boss(interaction: discord.Interaction, role: discord.Role, message: Optional[str] = None):
             if interaction.guild is None:
                 await interaction.response.send_message("This command must be used in a server.", ephemeral=True)
                 return
@@ -78,15 +79,22 @@ class BossAnnouncer(IFeature):
                 )
                 return
 
-            # initialize state and build initial embed via _build_embed for consistency
+            # initialize state
             state = {
                 "creator": interaction.user.id,
                 "role_id": role.id,
-                "coming": set(),
-                "ready": set(),
-                "killed": set(),
+                "coming": [],
+                "ready": [],
+                "killed": [],
                 "killed_enabled": False,
             }
+            # Snapshot latest checks at creation time only
+            try:
+                state["latest_checks_lines"] = await self._recent_checks_lines_for_role(role_name=role.name, limit=4)
+            except Exception:
+                state["latest_checks_lines"] = []
+
+            # build initial embed via _build_embed for consistency
             embed = await self._build_embed(role, state)
 
             view = discord.ui.View(timeout=None)
@@ -106,22 +114,23 @@ class BossAnnouncer(IFeature):
                             break
                 headline = "Raid!" if is_raid else "Boss spawn!"
 
+                # Build content without the old 'Click a button to sign up.' line; append optional message on new line
+                content = f"{role.mention} {headline}"
+                if message:
+                    content += f"\n{message}"
+
                 # If we're already in the registered channel, post as the interaction response
                 redirected = not (channel and target_channel and channel.id == target_channel.id)
                 if not redirected:
                     await interaction.response.send_message(
-                        content=f"{role.mention} {headline} Click a button to sign up.",
+                        content=content,
                         embed=embed,
                         view=view,
                     )
                     msg = await interaction.original_response()
                 else:
                     # Send the announcement to the target channel
-                    msg = await target_channel.send(
-                        content=f"{role.mention} {headline} Click a button to sign up.",
-                        embed=embed,
-                        view=view,
-                    )
+                    msg = await target_channel.send(content=content, embed=embed, view=view)
                     # Only in the redirect case, acknowledge with a link ephemerally
                     try:
                         await interaction.response.send_message(
@@ -231,12 +240,14 @@ class BossAnnouncer(IFeature):
                     raid_msg = boss_data.get('raid_msg')
                     break
         
-        description = f"{role.mention} — signup below"
+        # Build a cleaner description (no @role — signup below)
+        description_parts: List[str] = []
         if price_str:
-            description += f"\n💰 Price: **{price_str}**"
+            description_parts.append(f"💰 Price: **{price_str}**")
         # If raid and extra message provided, append it
         if is_raid and raid_msg:
-            description += f"\n\n{raid_msg}"
+            description_parts.append(raid_msg)
+        description = "\n\n".join(description_parts)
         
         # Use the boss name (role name) as the embed title instead of a generic one
         title_text = role.name if role and role.name else "Boss Announcement"
@@ -247,18 +258,32 @@ class BossAnnouncer(IFeature):
             emoji = await self.client.get_app_emoji(emoji_name)
             if emoji:
                 embed.set_thumbnail(url=emoji.url)
-        def list_names(ids: Set[int]):
+        def list_names(ids):
             if not ids:
                 return "—"
+            # Preserve insertion order; accept list or set from older messages
+            try:
+                ordered_ids = list(ids)
+            except Exception:
+                ordered_ids = [uid for uid in ids]
             names = []
-            for uid in ids:
+            for uid in ordered_ids:
                 member = role.guild.get_member(uid)
                 if member:
                     names.append(member.display_name)
                 else:
                     names.append(f"<@{uid}>")
-            return ", ".join(names)
+            # One name per line as requested
+            return "\n".join(names)
         
+        # Latest checks first (snapshot at creation time)
+        try:
+            recent_lines = list(state.get("latest_checks_lines") or [])
+            if recent_lines:
+                embed.add_field(name="Latest checks", value="\n".join(recent_lines), inline=False)
+        except Exception:
+            pass
+
         # Show Coming and Ready side-by-side
         embed.add_field(name="Coming", value=list_names(state["coming"]), inline=True)
         embed.add_field(name="Ready", value=list_names(state["ready"]), inline=True)
@@ -280,6 +305,69 @@ class BossAnnouncer(IFeature):
             embed.set_footer(text=f"\n──────────────────────────\nFound by {creator_name}")
 
         return embed
+
+    async def _recent_checks_lines_for_role(self, role_name: str, limit: int = 4) -> List[str]:
+        """Return up to `limit` recent check lines for any BOSSES entries that map to the given role name.
+        Output format per line: "• <boss_key> — <relative time> — by <user>" (area included when available).
+        """
+        if not role_name:
+            return []
+        # Gather BOSSES keys that share this role
+        matching_keys: Set[str] = set()
+        for key, data in BOSSES.items():
+            try:
+                if isinstance(data, dict) and data.get('role') == role_name:
+                    matching_keys.add(key)
+            except Exception:
+                continue
+
+        if not matching_keys:
+            return []
+
+        # Find the Checker feature instance to read its in-memory history
+        checker: Optional[Checker] = None
+        try:
+            for feat in getattr(self.client, 'features', []) or []:
+                if isinstance(feat, Checker):
+                    checker = feat
+                    break
+        except Exception:
+            checker = None
+
+        if not checker:
+            return []
+
+        # Snapshot recent history (already newest-first). We'll pick those matching our keys.
+        recent: List[Tuple[Union[int, str], str, str, str]] = []
+        try:
+            # Prefer to read under the lock if available
+            lock = getattr(checker, '_history_lock', None)
+            if isinstance(lock, asyncio.Lock):
+                async with lock:
+                    recent = list(getattr(checker, '_history', []) or [])
+            else:
+                recent = list(getattr(checker, '_history', []) or [])
+        except Exception:
+            recent = []
+
+        if not recent:
+            return []
+
+        lines: List[str] = []
+        for ts_or_str, user, area, boss_key in recent:
+            if boss_key not in matching_keys:
+                continue
+            # Time formatting: use Discord relative time if int
+            if isinstance(ts_or_str, int):
+                tpart = f"<t:{ts_or_str}:R>"
+            else:
+                tpart = str(ts_or_str)
+            # Line format: timestamp - user (no bullets, no area/boss)
+            lines.append(f"{tpart} - {user}")
+            if len(lines) >= limit:
+                break
+        # Display oldest -> newest so the latest check is at the bottom
+        return list(reversed(lines))
 
     async def on_button_click(self, interaction: discord.Interaction):
         # Only handle our boss buttons
@@ -309,50 +397,87 @@ class BossAnnouncer(IFeature):
         lock = self._locks.get(msg_id) or asyncio.Lock()
         async with lock:
             user_id = interaction.user.id
+            # Coerce legacy sets into lists to preserve ordering going forward
+            try:
+                if not isinstance(state["coming"], list):
+                    state["coming"] = list(state["coming"]) if state.get("coming") else []
+                if not isinstance(state["ready"], list):
+                    state["ready"] = list(state["ready"]) if state.get("ready") else []
+                if not isinstance(state["killed"], list):
+                    state["killed"] = list(state["killed"]) if state.get("killed") else []
+            except Exception:
+                pass
+
+            def _remove(lst: List[int], uid: int):
+                try:
+                    while uid in lst:
+                        lst.remove(uid)
+                except Exception:
+                    pass
+
+            def _append_unique(lst: List[int], uid: int):
+                try:
+                    if uid in lst:
+                        lst.remove(uid)
+                except Exception:
+                    pass
+                lst.append(uid)
             # toggle behaviors
             if action == "coming":
-                # If the user is currently in Ready, clicking Coming should move them back to Coming (remove Ready).
-                # Otherwise toggle Coming on/off.
+                # Move from Ready to Coming if present; else toggle Coming membership
                 if user_id in state["ready"]:
-                    state["ready"].discard(user_id)
-                    state["coming"].add(user_id)
-                    state["killed"].discard(user_id)
+                    _remove(state["ready"], user_id)
+                    _remove(state["killed"], user_id)
+                    _append_unique(state["coming"], user_id)
                 else:
                     if user_id in state["coming"]:
-                        # toggle off
-                        state["coming"].discard(user_id)
+                        _remove(state["coming"], user_id)
                     else:
-                        state["coming"].add(user_id)
-                        state["killed"].discard(user_id)
+                        _remove(state["killed"], user_id)
+                        _append_unique(state["coming"], user_id)
             elif action == "ready":
-                # toggle membership in ready
+                # Toggle Ready; Ready implies not in Coming; also remove from Killed
                 if user_id in state["ready"]:
-                    state["ready"].discard(user_id)
+                    _remove(state["ready"], user_id)
                 else:
-                    state["ready"].add(user_id)
-                    # ensure they're also in coming
-                    state["coming"].add(user_id)
-                    state["killed"].discard(user_id)
-                # ensure Ready implies not counted as only "Coming" (remove from Coming if present)
-                state["coming"].discard(user_id)
+                    _append_unique(state["ready"], user_id)
+                _remove(state["coming"], user_id)
+                _remove(state["killed"], user_id)
             elif action == "skull":
+                # Only creator or moderators (manage_messages) can enable killed mode
+                guild = interaction.guild
+                allowed = False
+                if guild:
+                    member = guild.get_member(interaction.user.id) if isinstance(interaction.user, discord.User) else interaction.user
+                    if member and member.guild_permissions.manage_messages:
+                        allowed = True
+                if interaction.user.id == state.get("creator"):
+                    allowed = True
+
+                if not allowed:
+                    try:
+                        await interaction.response.send_message("Only the creator or users with Manage Messages can enable killed mode.", ephemeral=True)
+                    except Exception:
+                        pass
+                    return
+
                 # Enable the Killed column but do not add the clicking user automatically.
                 state["killed_enabled"] = True
                 # After enabling, the buttons will be replaced with a single "Killed" button
             elif action == "remove":
                 # Remove the user from all signup lists (Coming, Ready, Killed)
-                state["coming"].discard(user_id)
-                state["ready"].discard(user_id)
-                state["killed"].discard(user_id)
+                _remove(state["coming"], user_id)
+                _remove(state["ready"], user_id)
+                _remove(state["killed"], user_id)
             elif action == "killed":
                 # When Killed button is clicked, add the user to killed set and remove from others
                 if user_id not in state["killed"]:
-                    state["killed"].add(user_id)
-                    state["coming"].discard(user_id)
-                    state["ready"].discard(user_id)
+                    _append_unique(state["killed"], user_id)
+                    _remove(state["coming"], user_id)
+                    _remove(state["ready"], user_id)
                 else:
                     # toggle off if already in killed
-                    state["killed"].discard(user_id)
+                    _remove(state["killed"], user_id)
             elif action == "close":
                 # only creator or moderators (manage_messages) can close
                 guild = interaction.guild

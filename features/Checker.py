@@ -101,7 +101,7 @@ AREAS = {
     ],
 }
 
-MAX_HISTORY = 25
+MAX_HISTORY = 15 # 25
 MAX_CUSTOM_ID_LENGTH = 100  # Discord custom_id max length
 
 def _now_unix() -> int:
@@ -566,11 +566,27 @@ class Checker(IFeature):
             return emb
         # Non-blocking snapshot; writes are rare and protected by a lock
         emb.description = legend_text
+        # Build a deduplicated list by boss key: keep only the latest event per boss
         try:
-            recent = list(self._history[:MAX_HISTORY])
+            hist_snapshot = list(self._history)
         except Exception:
-            recent = []
-        rows = list(reversed(recent))  # oldest -> newest
+            hist_snapshot = []
+        seen_boss: Set[str] = set()
+        uniques_newest_first: List[Tuple[Union[int, str], str, str, str]] = []
+        for item in hist_snapshot:  # _history is newest-first
+            try:
+                _ts, _user, _area, _boss = item
+            except Exception:
+                continue
+            if _boss in seen_boss:
+                continue
+            seen_boss.add(_boss)
+            uniques_newest_first.append(item)
+            if len(uniques_newest_first) >= MAX_HISTORY:
+                break
+
+        # Display oldest -> newest so the latest entry (per boss) is at the bottom
+        rows = list(reversed(uniques_newest_first))
 
         boss_col: List[str] = []
         player_col: List[str] = []
@@ -783,13 +799,8 @@ class Checker(IFeature):
             if active is None or not isinstance(active, dict):
                 active = {}
             key = self._make_active_key(area, boss)
-            if key in active:
-                try:
-                    del active[key]
-                except Exception:
-                    pass
-            else:
-                active[key] = _now_unix()
+            # Always record/refresh the check timestamp; do not toggle off
+            active[key] = _now_unix()
             self._active[msg.id] = active
 
         # Schedule a debounced edit of the area message to reduce rate-limit hits
