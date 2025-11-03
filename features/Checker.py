@@ -784,20 +784,20 @@ class Checker(IFeature):
             now_ts = _now_unix()
         if not ts or ts <= 0:
             # Inactive
-            return discord.ButtonStyle.danger, ":alarm_clock:"
+            return discord.ButtonStyle.danger, "⏰"
         delta = now_ts - ts
         ws = warn_s or self._default_warn_sec
         as_ = alert_s or self._default_alert_sec
         rs = reset_s or self._default_reset_sec
         if delta < ws:
-            return discord.ButtonStyle.success, ":white_check_mark:"
+            return discord.ButtonStyle.success, "✅"
         if delta < as_:
-            return discord.ButtonStyle.success, ":grey_exclamation:"
+            return discord.ButtonStyle.success, "❗"
         if delta < rs:
             # No true orange style; use primary as closest alternative
-            return discord.ButtonStyle.primary, ":bangbang:"
+            return discord.ButtonStyle.primary, "‼️"
         # Expired -> inactive
-        return discord.ButtonStyle.danger, ":alarm_clock:"
+        return discord.ButtonStyle.danger, "⏰"
 
     def _thresholds_for_entry(self, entry: Union[str, Dict, object]) -> Tuple[int, int, int]:
         try:
