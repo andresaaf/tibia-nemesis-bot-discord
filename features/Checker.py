@@ -759,7 +759,7 @@ class Checker(IFeature):
                 except Exception:
                     pass
                 last_ts = None
-            style, emoji = self._style_and_emoji_for_ts(last_ts, now_ts, warn_s, alert_s, reset_s)
+            style, emoji_str = self._style_and_emoji_for_ts(last_ts, now_ts, warn_s, alert_s, reset_s)
             cid = self._make_custom_id(area, boss_key)
             # Look up percentage by base boss name
             pct = percent_map.get(base_name)
@@ -774,8 +774,9 @@ class Checker(IFeature):
                 pass
             # Persistent bosses never show a percentage label; only show % when >2
             base_label = label_name if persistent else (f"{label_name} [{pct}%]" if (isinstance(pct, int) and pct > 2) else label_name)
-            label_text = f"{emoji} {base_label}" if emoji else base_label
-            view.add_item(discord.ui.Button(style=style, label=label_text, custom_id=cid))
+            # Convert emoji string to PartialEmoji for button
+            emoji_obj = discord.PartialEmoji.from_str(emoji_str) if emoji_str else None
+            view.add_item(discord.ui.Button(style=style, label=base_label, emoji=emoji_obj, custom_id=cid))
         return view
 
     def _style_and_emoji_for_ts(self, ts: Optional[int], now_ts: Optional[int] = None, warn_s: Optional[int] = None, alert_s: Optional[int] = None, reset_s: Optional[int] = None) -> Tuple[discord.ButtonStyle, str]:
@@ -783,20 +784,20 @@ class Checker(IFeature):
             now_ts = _now_unix()
         if not ts or ts <= 0:
             # Inactive
-            return discord.ButtonStyle.danger, ":alarm_clock:"
+            return discord.ButtonStyle.danger, "alarm_clock"
         delta = now_ts - ts
         ws = warn_s or self._default_warn_sec
         as_ = alert_s or self._default_alert_sec
         rs = reset_s or self._default_reset_sec
         if delta < ws:
-            return discord.ButtonStyle.success, ":white_check_mark:"
+            return discord.ButtonStyle.success, "white_check_mark"
         if delta < as_:
-            return discord.ButtonStyle.success, ":grey_exclamation:"
+            return discord.ButtonStyle.success, "grey_exclamation"
         if delta < rs:
             # No true orange style; use primary as closest alternative
-            return discord.ButtonStyle.primary, ":bangbang:"
+            return discord.ButtonStyle.primary, "bangbang"
         # Expired -> inactive
-        return discord.ButtonStyle.danger, ":alarm_clock:"
+        return discord.ButtonStyle.danger, "alarm_clock"
 
     def _thresholds_for_entry(self, entry: Union[str, Dict, object]) -> Tuple[int, int, int]:
         try:
