@@ -602,7 +602,7 @@ class Checker(IFeature):
             "Boss Check Legend:\n"
             ":white_check_mark: = up to 15 minutes (Zarabustor 7 minutes | POI 45 minutes)\n"
             ":grey_exclamation: = at least 15 minutes ago (Zarabustor 7 minutes | POI 45 minutes)\n"
-            ":exclamation: = at least 30 minutes ago (Zarabustor 15 minutes | POI 90 minutes)\n"
+            ":bangbang: = at least 30 minutes ago (Zarabustor 15 minutes | POI 90 minutes)\n"
             ":alarm_clock: = over 60 minutes ago (Zarabustor 30 minutes | POI 180 minutes)"
         )
         # Fast path when no history
@@ -794,7 +794,7 @@ class Checker(IFeature):
             return discord.ButtonStyle.success, ":grey_exclamation:"
         if delta < rs:
             # No true orange style; use primary as closest alternative
-            return discord.ButtonStyle.primary, ":exclamation:"
+            return discord.ButtonStyle.primary, ":bangbang:"
         # Expired -> inactive
         return discord.ButtonStyle.danger, ":alarm_clock:"
 
