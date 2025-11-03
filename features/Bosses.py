@@ -462,27 +462,32 @@ BOSSES = {
         'name': 'Rotworm Queen',
         'emoji': 'RotwormQueen',
         'role': 'Rotworm Queen',
+        'persist': True,
         'price': 200000
     },
     'Rotworm Queen - Darashia': {
         'name': 'Rotworm Queen',
         'emoji': 'RotwormQueen',
         'role': 'Rotworm Queen',
+        'persist': True,
     },
     'Rotworm Queen - Edron': {
         'name': 'Rotworm Queen',
         'emoji': 'RotwormQueen',
         'role': 'Rotworm Queen',
+        'persist': True,
     },
     'Rotworm Queen - Liberty Bay': {
         'name': 'Rotworm Queen',
         'emoji': 'RotwormQueen',
         'role': 'Rotworm Queen',
+        'persist': True,
     },
     'Rotworm Queen - Hellgate': {
         'name': 'Rotworm Queen',
         'emoji': 'RotwormQueen',
         'role': 'Rotworm Queen',
+        'persist': True,
     },
     'Rukor Zad': {
         'name': 'Rukor Zad',
