@@ -323,10 +323,10 @@ class Checker(IFeature):
         except Exception:
             logger.exception("Checker initial update failed")
 
-        # schedule daily 09:00 updates
+        # schedule daily 10:00 updates (API updates at 09:00, bot updates at 10:00)
         while True:
             now = datetime.now()
-            target = datetime.combine(now.date(), dtime(hour=9, minute=0, second=0))
+            target = datetime.combine(now.date(), dtime(hour=10, minute=0, second=0))
             if target <= now:
                 target = target + timedelta(days=1)
             wait_seconds = (target - now).total_seconds()

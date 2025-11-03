@@ -9,7 +9,7 @@ from features import RoleHandler, BossAnnouncer, PriceList, Checker
 logging.basicConfig(level=logging.INFO)
 
 class GolluxBot(discord.Client):
-    def __init__(self):
+    def __init__(self, api_base_url: str = None):
         intents = discord.Intents().default()
         intents.members = True
         intents.message_content = True
@@ -19,6 +19,8 @@ class GolluxBot(discord.Client):
         self.tree = discord.app_commands.CommandTree(self)
         # Shared application emoji cache for all features
         self._app_emojis = {}
+        # API base URL for external services (e.g., Go REST API)
+        self.api_base_url = api_base_url
 
         self.features = [
             PriceList(self),
@@ -144,5 +146,8 @@ if __name__ == '__main__':
             logging.error("No token found in environment or token.txt")
             raise SystemExit(1)
 
-    bot = GolluxBot()
+    api_base_url = os.getenv('API_BASE_URL', 'http://localhost:8080')
+    logging.info("Using API base URL: %s", api_base_url)
+
+    bot = GolluxBot(api_base_url=api_base_url)
     bot.run(token)

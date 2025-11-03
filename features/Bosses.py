@@ -43,8 +43,7 @@ BOSSES = {
         'name': 'Arachir the Ancient One',
         'emoji': 'ArachirTheAncientOne',
         'role': 'Arachir the Ancient One',
-        'price': 200000,
-        'inclusion_range': (6, 17)
+        'price': 200000
     },
     'Arthom the Hunter': {
         'name': 'Arthom the Hunter',
@@ -58,8 +57,7 @@ BOSSES = {
         'name': 'Barbaria',
         'emoji': 'Barbaria',
         'role': 'Barbaria',
-        'price': 200000,
-        'inclusion_range': (8, 25)
+        'price': 200000
     },
     'Battlemaster Zunzu': {
         'name': 'Battlemaster Zunzu',
@@ -90,8 +88,7 @@ BOSSES = {
         'name': 'Big Boss Trolliver',
         'emoji': 'BigBossTrolliver',
         'role': 'Big Boss Trolliver',
-        'price': 200000,
-        'inclusion_range': (3, 19)
+        'price': 200000
     },
     'Burster': {
         'name': 'Burster',
@@ -104,16 +101,14 @@ BOSSES = {
         'name': 'Captain Jones',
         'emoji': 'CaptainJones',
         'role': 'Captain Jones',
-        'price': 200000,
-        'inclusion_range': (6, 20)
+        'price': 200000
     },
     'Countess Sorrow': {
         'name': 'Countess Sorrow',
         'emoji': 'CountessSorrow',
         'role': 'Countess Sorrow',
         'price': 400000,
-        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 },
-        'inclusion_range': (14, 37)
+        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 }
     },
     'Crustacea Gigantica': {
         'name': 'Crustacea Gigantica',
@@ -143,15 +138,13 @@ BOSSES = {
         'name': 'Dharalion',
         'emoji': 'Dharalion',
         'role': 'Dharalion',
-        'price': 200000,
-        'inclusion_range': (6, 15)
+        'price': 200000
     },
     'Diblis the Fair': {
         'name': 'Diblis the Fair',
         'emoji': 'DiblisTheFair',
         'role': 'Diblis the Fair',
-        'price': 200000,
-        'inclusion_range': (10, 17)
+        'price': 200000
     },
     'Dire Penguin': {
         'name': 'Dire Penguin',
@@ -165,8 +158,7 @@ BOSSES = {
         'emoji': 'Dracola',
         'role': 'Dracola',
         'price': 400000,
-        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 },
-        'inclusion_range': (14, 38)
+        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 }
     },
     'Draptor': {
         'name': 'Draptor',
@@ -265,15 +257,13 @@ BOSSES = {
         'name': 'Foreman Kneebiter',
         'emoji': 'ForemanKneebiter',
         'role': 'Foreman Kneebiter',
-        'price': 200000,
-        'inclusion_range': (3, 22)
+        'price': 200000
     },
     'Furyosa': {
         'name': 'Furyosa',
         'emoji': 'Furyosa',
         'role': 'Furyosa',
-        'price': 600000,
-        'inclusion_range': (12, 46)
+        'price': 600000
     },
     'Gaz\'haragoth': {
         'name': "Gaz'haragoth",
@@ -286,8 +276,7 @@ BOSSES = {
         'name': 'General Murius',
         'emoji': 'GeneralMurius',
         'role': 'General Murius',
-        'price': 200000,
-        'inclusion_range': (6, 18)
+        'price': 200000
     },
     'Ghazbaran': {
         'name': 'Ghazbaran',
@@ -301,8 +290,7 @@ BOSSES = {
         'name': 'Grandfather Tridian',
         'emoji': 'GrandfatherTridian',
         'role': 'Grandfather Tridian',
-        'price': 200000,
-        'inclusion_range': (6, 17)
+        'price': 200000
     },
     'Grand Mother Foulscale': {
         'name': 'Grand Mother Foulscale',
@@ -318,8 +306,7 @@ BOSSES = {
         'name': 'Gravelord Oshuran',
         'emoji': 'GravelordOshuran',
         'role': 'Gravelord Oshuran',
-        'price': 200000,
-        'inclusion_range': (7, 23)
+        'price': 200000
     },
     'Groam': {
         'name': 'Groam',
@@ -339,22 +326,19 @@ BOSSES = {
         'name': 'Hairman the Huge',
         'emoji': 'HairmanTheHuge',
         'role': 'Hairman the Huge',
-        'price': 200000,
-        'inclusion_range': (5, 22)
+        'price': 200000
     },
     'Hatebreeder': {
         'name': 'Hatebreeder',
         'emoji': 'Hatebreeder',
         'role': 'Hatebreeder',
-        'price': 400000,
-        'inclusion_range': (6, 25)
+        'price': 400000
     },
     'High Templar Cobrass': {
         'name': 'High Templar Cobrass',
         'emoji': 'HighTemplarCobrass',
         'role': 'High Templar Cobrass',
-        'price': 200000,
-        'inclusion_range': (6, 24)
+        'price': 200000
     },
     'Hirintror': {
         'name': 'Hirintror',
@@ -389,16 +373,14 @@ BOSSES = {
         'name': 'Man in the Cave',
         'emoji': 'ManInTheCave',
         'role': 'Man in the Cave',
-        'price': 200000,
-        'inclusion_range': (12, 30)
+        'price': 200000
     },
     'Massacre': {
         'name': 'Massacre',
         'emoji': 'Massacre',
         'role': 'Massacre',
         'price': 400000,
-        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 },
-        'inclusion_range': (14, 36)
+        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 }
     },
     'Mawhawk': {
         'name': 'Mawhawk',
@@ -441,15 +423,13 @@ BOSSES = {
         'emoji': 'MrPunish',
         'role': 'Mr. Punish',
         'price': 400000,
-        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 },
-        'inclusion_range': (14, 38)
+        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 }
     },
     'Ocyakao': {
         'name': 'Ocyakao',
         'emoji': 'Ocyakao',
         'role': 'Ocyakao',
-        'price': 200000,
-        'inclusion_range': (16, 27)
+        'price': 200000
     },
     'Omrafir': {
         'name': 'Omrafir',
@@ -508,15 +488,13 @@ BOSSES = {
         'name': 'Rukor Zad',
         'emoji': 'RukorZad',
         'role': 'Rukor Zad',
-        'price': 200000,
-        'inclusion_range': (6, 25)
+        'price': 200000
     },
     'Shlorg': {
         'name': 'Shlorg',
         'emoji': 'Shlorg',
         'role': 'Shlorg',
-        'price': 200000,
-        'inclusion_range': (13, 30)
+        'price': 200000
     },
     'Sir Leopold': {
         'name': 'Sir Leopold',
@@ -533,15 +511,13 @@ BOSSES = {
         'name': 'Sir Valorcrest',
         'emoji': 'SirValorcrest',
         'role': 'Sir Valorcrest',
-        'price': 200000,
-        'inclusion_range': (5, 10)
+        'price': 200000
     },
     'Smuggler Baron Silvertoe': {
         'name': 'Smuggler Baron Silvertoe',
         'emoji': 'SmugglerBaronSilvertoe',
         'role': 'Smuggler Baron Silvertoe',
-        'price': 200000,
-        'inclusion_range': (8, 27)
+        'price': 200000
     },
     'The Abomination': {
         'name': 'The Abomination',
@@ -553,8 +529,7 @@ BOSSES = {
         'name': 'The Big Bad One',
         'emoji': 'TheBigBadOne',
         'role': 'The Big Bad One',
-        'price': 200000,
-        'inclusion_range': (6, 21)
+        'price': 200000
     },
     'The Blightfather': {
         'name': 'The Blightfather',
@@ -569,23 +544,20 @@ BOSSES = {
         'name': 'The Evil Eye',
         'emoji': 'TheEvilEye',
         'role': 'The Evil Eye',
-        'price': 200000,
-        'inclusion_range': (6, 19)
+        'price': 200000
     },
     'The Frog Prince': {
         'name': 'The Frog Prince',
         'emoji': 'TheFrogPrince',
         'role': 'The Frog Prince',
-        'price': 200000,
-        'inclusion_range': (12, 34)
+        'price': 200000
     },
     'The Handmaiden': {
         'name': 'The Handmaiden',
         'emoji': 'TheHandmaiden',
         'role': 'The Handmaiden',
         'price': 200000,
-        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 },
-        'inclusion_range': (14, 38)
+        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 }
     },
     'The Hungerer': {
         'name': 'The Hungerer',
@@ -598,8 +570,7 @@ BOSSES = {
         'emoji': 'TheImperor',
         'role': 'The Imperor',
         'price': 400000,
-        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 },
-        'inclusion_range': (14, 37)
+        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 }
     },
     'The Manhunter': {
         'name': 'The Manhunter',
@@ -617,8 +588,7 @@ BOSSES = {
         'name': 'The Old Whopper',
         'emoji': 'TheOldWhopper',
         'role': 'The Old Whopper',
-        'price': 200000,
-        'inclusion_range': (5, 20)
+        'price': 200000
     },
     'The Pale Count': {
         'name': 'The Pale Count',
@@ -632,8 +602,7 @@ BOSSES = {
         'emoji': 'ThePlasmother',
         'role': 'The Plasmother',
         'price': 600000,
-        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 },
-        'inclusion_range': (14, 39)
+        'check_thresholds': { 'warn': 45, 'alert': 90, 'reset': 180 }
     },
     'The Voice of Ruin': {
         'name': 'The Voice of Ruin',
@@ -655,8 +624,7 @@ BOSSES = {
         'name': 'The Welter',
         'emoji': 'TheWelter',
         'role': 'The Welter',
-        'price': 200000,
-        'inclusion_range': (16, 30)
+        'price': 200000
     },
     'Troll Guard': {
         'name': 'Troll Guard',
@@ -687,8 +655,7 @@ BOSSES = {
         'name': 'Tzumrah the Dazzler',
         'emoji': 'TzumrahTheDazzler',
         'role': 'Tzumrah the Dazzler',
-        'price': 200000,
-        'inclusion_range': (20, 49)
+        'price': 200000
     },
     'Undead Cavebear': {
         'name': 'Undead Cavebear',
@@ -700,8 +667,7 @@ BOSSES = {
         'name': 'Warlord Ruzad',
         'emoji': 'WarlordRuzad',
         'role': 'Warlord Ruzad',
-        'price': 200000,
-        'inclusion_range': (6, 25)
+        'price': 200000
     },
     'White Pale': {
         'name': 'White Pale',
@@ -742,15 +708,13 @@ BOSSES = {
         'name': 'Xenia',
         'emoji': 'Xenia',
         'role': 'Xenia',
-        'price': 200000,
-        'inclusion_range': (7, 27)
+        'price': 200000
     },
     'Yaga the Crone': {
         'name': 'Yaga the Crone',
         'emoji': 'YagaTheCrone',
         'role': 'Yaga the Crone',
-        'price': 200000,
-        'inclusion_range': (5, 20)
+        'price': 200000
     },
     'Yakchal': {
         'name': 'Yakchal',
@@ -770,15 +734,13 @@ BOSSES = {
         'emoji': 'Zarabustor',
         'role': 'Zarabustor',
         'price': 600000,
-        'check_thresholds': { 'warn': 7, 'alert': 15, 'reset': 30 },
-        'inclusion_range': (6, 25)
+        'check_thresholds': { 'warn': 7, 'alert': 15, 'reset': 30 }
     },
     'Zevelon Duskbringer': {
         'name': 'Zevelon Duskbringer',
         'emoji': 'ZevelonDuskbringer',
         'role': 'Zevelon Duskbringer',
-        'price': 200000,
-        'inclusion_range': (6, 17)
+        'price': 200000
     },
     'Zomba': {
         'name': 'Zomba',
@@ -804,7 +766,6 @@ BOSSES = {
         'name': 'Zushuka',
         'emoji': 'Zushuka',
         'role': 'Zushuka',
-        'price': 200000,
-        'inclusion_range': (19, 30)
+        'price': 200000
     }
 }
