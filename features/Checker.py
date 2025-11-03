@@ -526,20 +526,19 @@ class Checker(IFeature):
         # Post a final message listing possible raids (no buttons)
         try:
             raids_text = await self._build_possible_raids_content(percent_map)
-            if raids_text:
-                if existing_raids_msg is not None:
-                    try:
-                        await existing_raids_msg.edit(content=raids_text)
-                        self._raids_msg_id = existing_raids_msg.id
-                        self._messages[existing_raids_msg.id] = existing_raids_msg
-                        self._db_save_message_id(guild_id, 'RAIDS', existing_raids_msg.id)
-                    except Exception:
-                        logger.exception("Checker: failed to edit Possible Raids message")
-                else:
-                    sent = await channel.send(raids_text)
-                    self._raids_msg_id = sent.id
-                    self._messages[sent.id] = sent
-                    self._db_save_message_id(guild_id, 'RAIDS', sent.id)
+            if existing_raids_msg is not None:
+                try:
+                    await existing_raids_msg.edit(content=raids_text)
+                    self._raids_msg_id = existing_raids_msg.id
+                    self._messages[existing_raids_msg.id] = existing_raids_msg
+                    self._db_save_message_id(guild_id, 'RAIDS', existing_raids_msg.id)
+                except Exception:
+                    logger.exception("Checker: failed to edit Possible Raids message")
+            else:
+                sent = await channel.send(raids_text)
+                self._raids_msg_id = sent.id
+                self._messages[sent.id] = sent
+                self._db_save_message_id(guild_id, 'RAIDS', sent.id)
         except Exception:
             logger.exception("Checker: failed to send/edit Possible Raids message")
 
@@ -687,7 +686,7 @@ class Checker(IFeature):
             except Exception:
                 continue
         if not entries:
-            return ""
+            return "**Possible Raids**\n"
         # Sort by percentage descending
         entries.sort(key=lambda x: x[0], reverse=True)
         parts = [text for _pct, text in entries]

@@ -678,22 +678,26 @@ BOSSES = {
         'name': 'White Pale',
         'emoji': 'WhitePale',
         'role': 'White Pale',
+        'persist': True,
         'price': 200000
     },
     'White Pale - Edron': {
         'name': 'White Pale',
         'emoji': 'WhitePale',
         'role': 'White Pale',
+        'persist': True,
     },
     'White Pale - Darashia': {
         'name': 'White Pale',
         'emoji': 'WhitePale',
         'role': 'White Pale',
+        'persist': True,
     },
     'White Pale - Liberty Bay': {
         'name': 'White Pale',
         'emoji': 'WhitePale',
         'role': 'White Pale',
+        'persist': True,
     },
     'Wild Horse': {
         'name': 'Wild Horse',
