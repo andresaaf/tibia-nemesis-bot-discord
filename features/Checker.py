@@ -600,10 +600,10 @@ class Checker(IFeature):
         legend_text = (
             "Click the button after checking a boss.\n\n"
             "Boss Check Legend:\n"
-            "✅ = up to 15 minutes (Zarabustor 7 minutes | POI 45 minutes)\n"
-            "❕ = at least 15 minutes ago (Zarabustor 7 minutes | POI 45 minutes)\n"
-            "‼️ = at least 30 minutes ago (Zarabustor 15 minutes | POI 90 minutes)\n"
-            "⏰ = over 60 minutes ago (Zarabustor 30 minutes | POI 180 minutes)"
+            ":white_check_mark: = up to 15 minutes (Zarabustor 7 minutes | POI 45 minutes)\n"
+            ":grey_exclamation: = at least 15 minutes ago (Zarabustor 7 minutes | POI 45 minutes)\n"
+            ":exclamation: = at least 30 minutes ago (Zarabustor 15 minutes | POI 90 minutes)\n"
+            ":alarm_clock: = over 60 minutes ago (Zarabustor 30 minutes | POI 180 minutes)"
         )
         # Fast path when no history
         if not self._history:
@@ -783,20 +783,20 @@ class Checker(IFeature):
             now_ts = _now_unix()
         if not ts or ts <= 0:
             # Inactive
-            return discord.ButtonStyle.danger, "⏰"
+            return discord.ButtonStyle.danger, ":alarm_clock:"
         delta = now_ts - ts
         ws = warn_s or self._default_warn_sec
         as_ = alert_s or self._default_alert_sec
         rs = reset_s or self._default_reset_sec
         if delta < ws:
-            return discord.ButtonStyle.success, "✅"
+            return discord.ButtonStyle.success, ":white_check_mark:"
         if delta < as_:
-            return discord.ButtonStyle.success, "❕"
+            return discord.ButtonStyle.success, ":grey_exclamation:"
         if delta < rs:
             # No true orange style; use primary as closest alternative
-            return discord.ButtonStyle.primary, "‼️"
+            return discord.ButtonStyle.primary, ":exclamation:"
         # Expired -> inactive
-        return discord.ButtonStyle.danger, "⏰"
+        return discord.ButtonStyle.danger, ":alarm_clock:"
 
     def _thresholds_for_entry(self, entry: Union[str, Dict, object]) -> Tuple[int, int, int]:
         try:

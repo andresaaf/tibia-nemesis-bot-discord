@@ -64,6 +64,7 @@ BOSSES = {
         'checker_name': 'Zunzu',
         'emoji': 'BattlemasterZunzu',
         'role': 'Battlemaster Zunzu',
+        'persist': True,
         'price': 200000
     },
     'Battlemaster Zunzu - West': {
@@ -71,18 +72,21 @@ BOSSES = {
         'checker_name': 'Zunzu (West)',
         'emoji': 'BattlemasterZunzu',
         'role': 'Battlemaster Zunzu',
+        'persist': True,
     },
     'Battlemaster Zunzu - Middle': {
         'name': 'Battlemaster Zunzu (Middle)',
         'checker_name': 'Zunzu (Middle)',
         'emoji': 'BattlemasterZunzu',
         'role': 'Battlemaster Zunzu',
+        'persist': True,
     },
     'Battlemaster Zunzu - East': {
         'name': 'Battlemaster Zunzu (East)',
         'checker_name': 'Zunzu (East)',
         'emoji': 'BattlemasterZunzu',
         'role': 'Battlemaster Zunzu',
+        'persist': True,
     },
     'Big Boss Trolliver': {
         'name': 'Big Boss Trolliver',
@@ -176,17 +180,20 @@ BOSSES = {
         'name': 'Dreadmaw',
         'emoji': 'Dreadmaw',
         'role': 'Dreadmaw',
+        'persist': True,
         'price': 200000
     },
     'Dreadmaw - West': {
         'name': 'Dreadmaw (West)',
         'emoji': 'Dreadmaw',
         'role': 'Dreadmaw',
+        'persist': True,
     },
     'Dreadmaw - East': {
         'name': 'Dreadmaw (East)',
         'emoji': 'Dreadmaw',
         'role': 'Dreadmaw',
+        'persist': True,
     },
     'Elvira Hammerthrust': {
         'name': 'Elvira Hammerthrust',
@@ -218,6 +225,7 @@ BOSSES = {
         'checker_name': 'Zazrak',
         'emoji': 'FlamecallerZazrak',
         'role': 'Flamecaller Zazrak',
+        'persist': True,
         'price': 200000
     },
     'Flamecaller Zazrak - Mountain': {
@@ -225,33 +233,39 @@ BOSSES = {
         'checker_name': 'Zazrak (Mountain)',
         'emoji': 'FlamecallerZazrak',
         'role': 'Flamecaller Zazrak',
+        'persist': True,
     },
     'Flamecaller Zazrak - Dojo': {
         'name': 'Flamecaller Zazrak (Dojo)',
         'checker_name': 'Zazrak (Dojo)',
         'emoji': 'FlamecallerZazrak',
         'role': 'Flamecaller Zazrak',
+        'persist': True,
     },
     'Fleabringer': {
         'name': 'Fleabringer',
         'emoji': 'Fleabringer',
         'role': 'Fleabringer',
+        'persist': True,
         'price': 200000
     },
     'Fleabringer - North': {
         'name': 'Fleabringer (North)',
         'emoji': 'Fleabringer',
         'role': 'Fleabringer',
+        'persist': True,
     },
     'Fleabringer - South': {
         'name': 'Fleabringer (South)',
         'emoji': 'Fleabringer',
         'role': 'Fleabringer',
+        'persist': True,
     },
     'Fleabringer - Surface': {
         'name': 'Fleabringer (Surface)',
         'emoji': 'Fleabringer',
         'role': 'Fleabringer',
+        'persist': True,
     },
     'Foreman Kneebiter': {
         'name': 'Foreman Kneebiter',
@@ -344,17 +358,20 @@ BOSSES = {
         'name': 'Hirintror',
         'emoji': 'Hirintror',
         'role': 'Hirintror',
+        'persist': True,
         'price': 200000
     },
     'Hirintror - Nibelor': {
         'name': 'Hirintror (Nibelor)',
         'emoji': 'Hirintror',
         'role': 'Hirintror',
+        'persist': True,
     },
     'Hirintror - Mines': {
         'name': 'Hirintror (Mines)',
         'emoji': 'Hirintror',
         'role': 'Hirintror',
+        'persist': True,
     },
     'Jesse the Wicked': {
         'name': 'Jesse the Wicked',
@@ -613,17 +630,20 @@ BOSSES = {
         'name': 'The Voice of Ruin',
         'emoji': 'TheVoiceOfRuin',
         'role': 'The Voice of Ruin',
+        'persist': True,
         'price': 200000
     },
     'The Voice of Ruin - Ghastly': {
         'name': 'Voice of Ruin (Ghastly)',
         'emoji': 'TheVoiceOfRuin',
         'role': 'The Voice of Ruin',
+        'persist': True,
     },
     'The Voice of Ruin - Middle': {
         'name': 'The Voice of Ruin (Middle)',
         'emoji': 'TheVoiceOfRuin',
         'role': 'The Voice of Ruin',
+        'persist': True,
     },
     'The Welter': {
         'name': 'The Welter',
@@ -644,17 +664,20 @@ BOSSES = {
         'name': 'Tyrn',
         'emoji': 'Tyrn',
         'role': 'Tyrn',
+        'persist': True,
         'price': 200000
     },
     'Tyrn - Darashia': {
         'name': 'Tyrn',
         'emoji': 'Tyrn',
         'role': 'Tyrn',
+        'persist': True,
     },
     'Tyrn - Liberty Bay': {
         'name': 'Tyrn',
         'emoji': 'Tyrn',
         'role': 'Tyrn',
+        'persist': True,
     },
     'Tzumrah the Dazzler': {
         'name': 'Tzumrah the Dazzler',
