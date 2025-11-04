@@ -463,6 +463,29 @@ class BossAnnouncer(IFeature):
 
                 # Enable the Killed column but do not add the clicking user automatically.
                 state["killed_enabled"] = True
+                
+                # Mark this boss as killed in the Checker so it's hidden until next 10:00 refresh
+                try:
+                    if guild:
+                        role = guild.get_role(state.get("role_id"))
+                        if role:
+                            # Find the Checker feature instance
+                            checker: Optional[Checker] = None
+                            for feat in getattr(self.client, 'features', []) or []:
+                                if isinstance(feat, Checker):
+                                    checker = feat
+                                    break
+                            if checker:
+                                checker.mark_boss_killed(guild.id, role.name)
+                                logger.info("BossAnnouncer: marked boss role %s as killed in Checker for guild %s", role.name, guild.id)
+                                # Trigger a refresh of checker messages to immediately hide the boss
+                                try:
+                                    await checker._ensure_channel_messages_and_update()
+                                except Exception:
+                                    logger.exception("BossAnnouncer: failed to refresh checker messages after marking boss killed")
+                except Exception:
+                    logger.exception("BossAnnouncer: failed to mark boss as killed in Checker")
+                
                 # After enabling, the buttons will be replaced with a single "Killed" button
             elif action == "remove":
                 # Remove the user from all signup lists (Coming, Ready, Killed)

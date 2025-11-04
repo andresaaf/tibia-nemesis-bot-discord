@@ -168,6 +168,8 @@ class Checker(IFeature):
         self._boss_id_rev: Dict[str, str] = {}
         # Fury Gate city per guild (Carlin or Thais)
         self._furygate_city = {}
+        # Killed bosses per guild (boss_key set) - hidden until next 10:00 refresh
+        self._killed_bosses: Dict[int, Set[str]] = {}
 
     async def on_ready(self):
         if self._ready:
@@ -370,6 +372,13 @@ class Checker(IFeature):
             self._prune_serversave_active()
         except Exception:
             logger.exception("Checker: failed to prune serversave active states")
+        
+        # Clear killed bosses (from /boss skull button) on daily refresh
+        try:
+            self.clear_killed_bosses(guild_id)
+        except Exception:
+            logger.exception("Checker: failed to clear killed bosses")
+        
         # Try to load persisted message IDs from DB to avoid scanning
         id_map = self._db_load_message_ids(guild_id)
 
@@ -735,12 +744,19 @@ class Checker(IFeature):
         # Allowed based on spawnables map (bosses that could spawn). Value is percent or None.
         allowed = set(percent_map.keys()) if allowed is None else allowed
         now_ts = _now_unix()
+        # Get killed bosses for this guild
+        killed_bosses = self._killed_bosses.get(guild_id, set())
 
         for b in bosses:
             # Determine if this is a persistent boss (always shown, no percent label)
             persistent = isinstance(b, dict) and bool(b.get('persist', False))
             name = self._boss_to_name(b)  # display name (may include location qualifiers)
             boss_key = self._boss_to_key(b)  # BOSSES mapping key for identification/history
+            
+            # Skip if this boss has been marked as killed (but not if it's persistent)
+            if not persistent and boss_key in killed_bosses:
+                continue
+            
             warn_s, alert_s, reset_s = self._thresholds_for_entry(b)
             # Base boss name used for matching against site data: prefer role if present, else name
             if isinstance(b, dict):
@@ -1008,10 +1024,17 @@ class Checker(IFeature):
         state: Dict[str, Tuple[int, str]] = {}
         allowed = set(percent_map.keys()) if allowed is None else allowed
         now_ts = _now_unix()
+        killed_bosses = self._killed_bosses.get(guild_id, set())
+        
         for b in bosses:
             persistent = isinstance(b, dict) and bool(b.get('persist', False))
             name = self._boss_to_name(b)
             boss_key = self._boss_to_key(b)
+            
+            # Skip if this boss has been marked as killed (but not if it's persistent)
+            if not persistent and boss_key in killed_bosses:
+                continue
+            
             warn_s, alert_s, reset_s = self._thresholds_for_entry(b)
             if isinstance(b, dict):
                 base_name = str(b.get('role') or b.get('name') or name)
@@ -1179,6 +1202,26 @@ class Checker(IFeature):
             return area, boss_key
         except Exception:
             return None
+
+    # --------------------- Killed boss tracking (for /boss command integration) ---------------------
+    def mark_boss_killed(self, guild_id: int, role_name: str) -> None:
+        """Mark all bosses with the given role as killed (hidden from checker) until next 10:00 refresh.
+        Called by BossAnnouncer when skull button is clicked.
+        """
+        if guild_id not in self._killed_bosses:
+            self._killed_bosses[guild_id] = set()
+        
+        # Find all boss keys that have this role
+        for boss_key, data in BOSSES.items():
+            if isinstance(data, dict) and data.get('role') == role_name:
+                self._killed_bosses[guild_id].add(boss_key)
+                logger.info("Checker: marked boss %s (role %s) as killed for guild %s", boss_key, role_name, guild_id)
+    
+    def clear_killed_bosses(self, guild_id: int) -> None:
+        """Clear all killed boss markers for a guild. Called during daily 10:00 refresh."""
+        if guild_id in self._killed_bosses:
+            self._killed_bosses[guild_id].clear()
+            logger.info("Checker: cleared killed bosses for guild %s", guild_id)
 
     def _db_init_message_table(self):
         try:
