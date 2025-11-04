@@ -334,13 +334,13 @@ class Checker(IFeature):
             wait_seconds = (target - now).total_seconds()
             try:
                 await asyncio.sleep(wait_seconds)
-                await self._ensure_channel_messages_and_update()
+                await self._ensure_channel_messages_and_update(clear_killed=True)
             except asyncio.CancelledError:
                 break
             except Exception:
                 logger.exception("Checker scheduled update failed")
 
-    async def _ensure_channel_messages_and_update(self):
+    async def _ensure_channel_messages_and_update(self, clear_killed: bool = False):
         # read configured channel id from DB
         channel_id = None
         try:
@@ -373,11 +373,12 @@ class Checker(IFeature):
         except Exception:
             logger.exception("Checker: failed to prune serversave active states")
         
-        # Clear killed bosses (from /boss skull button) on daily refresh
-        try:
-            self.clear_killed_bosses(guild_id)
-        except Exception:
-            logger.exception("Checker: failed to clear killed bosses")
+        # Clear killed bosses (from /boss skull button) only during scheduled daily refresh
+        if clear_killed:
+            try:
+                self.clear_killed_bosses(guild_id)
+            except Exception:
+                logger.exception("Checker: failed to clear killed bosses")
         
         # Try to load persisted message IDs from DB to avoid scanning
         id_map = self._db_load_message_ids(guild_id)
