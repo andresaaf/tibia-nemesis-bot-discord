@@ -271,6 +271,7 @@ class Checker(IFeature):
                 # Command to set Fury Gate city (Carlin or Thais). Affects Furyosa button label.
                 @app_commands.command(name="furygate", description="Set the Fury Gate city for this server")
                 @app_commands.choices(city=[
+                    app_commands.Choice(name="None", value="None"),
                     app_commands.Choice(name="Carlin", value="Carlin"),
                     app_commands.Choice(name="Ab'Dendriel", value="Ab'Dendriel"),
                     app_commands.Choice(name="Kazordoon", value="Kazordoon"),
@@ -288,11 +289,17 @@ class Checker(IFeature):
                         return
                     try:
                         guild_id = interaction.guild.id
-                        self._set_furygate_city(guild_id, city.value)
+                        # Handle "None" specially
+                        if city.value == "None":
+                            self._set_furygate_city(guild_id, None)
+                            user_name = getattr(interaction.user, "display_name", None) or getattr(interaction.user, "name", "User")
+                            await interaction.response.send_message(f"{user_name} set Fury Gate to None (Furyosa hidden)")
+                        else:
+                            self._set_furygate_city(guild_id, city.value)
+                            user_name = getattr(interaction.user, "display_name", None) or getattr(interaction.user, "name", "User")
+                            await interaction.response.send_message(f"{user_name} changed Fury Gate to {city.value}")
                         # Re-render checker messages to update the Furyosa label
                         await self._ensure_channel_messages_and_update()
-                        user_name = getattr(interaction.user, "display_name", None) or getattr(interaction.user, "name", "User")
-                        await interaction.response.send_message(f"{user_name} changed Fury Gate to {city.value}")
                     except Exception:
                         logger.exception("Checker: failed to set Fury Gate city")
                         try:
@@ -340,6 +347,8 @@ class Checker(IFeature):
             wait_seconds = (target - now).total_seconds()
             try:
                 await asyncio.sleep(wait_seconds)
+                # Reset furygate cities to None at 10:00
+                self._reset_all_furygate_cities()
                 await self._ensure_channel_messages_and_update(clear_killed=True)
             except asyncio.CancelledError:
                 break
@@ -475,8 +484,23 @@ class Checker(IFeature):
 
         self._first_msg_id = first_msg.id
 
-        # Start with empty active maps (no persistent button state)
-        area_active_map: Dict[str, Dict[str, int]] = {area: {} for area in AREAS.keys()}
+        # Load persisted button states from database
+        area_active_map: Dict[str, Dict[str, int]] = {}
+        try:
+            # First load saved message IDs to know which messages exist
+            saved_msg_ids = self._db_load_message_ids(guild_id)
+            for area in AREAS.keys():
+                area_active_map[area] = {}
+                msg_id = saved_msg_ids.get(area)
+                if msg_id:
+                    # Load persisted timestamps for this area's message
+                    active_data = self._db_load_active(guild_id, msg_id)
+                    area_active_map[area] = active_data
+                    # Also populate the in-memory _active dict
+                    self._active[msg_id] = dict(active_data)
+        except Exception:
+            logger.exception("Checker: failed to load persisted active states; starting fresh")
+            area_active_map = {area: {} for area in AREAS.keys()}
 
         # Ensure cache is up to date before rendering area messages (per guild)
         try:
@@ -817,11 +841,15 @@ class Checker(IFeature):
             # Look up percentage by base boss name
             pct = percent_map.get(base_name)
             # Adjust display name for Furyosa: append current Fury Gate city
+            # Skip Furyosa entirely if city is None
             label_name = name
             try:
                 if boss_key == 'Furyosa':
                     city = self._get_furygate_city(guild_id)
-                    if city:
+                    if city is None:
+                        # Skip this boss if Fury Gate is set to None
+                        continue
+                    elif city:
                         label_name = f"{name} ({city})"
             except Exception:
                 pass
@@ -909,8 +937,16 @@ class Checker(IFeature):
                 active = {}
             key = self._make_active_key(area, boss)
             # Always record/refresh the check timestamp; do not toggle off
-            active[key] = _now_unix()
+            ts = _now_unix()
+            active[key] = ts
             self._active[msg.id] = active
+            
+            # Persist timestamp to database
+            try:
+                guild_id = interaction.guild.id if interaction.guild else 0
+                self._db_save_active(guild_id, msg.id, area, boss, ts)
+            except Exception:
+                logger.exception("Checker: failed to persist active timestamp for %s/%s", area, boss)
 
         # Schedule a debounced edit of the area message to reduce rate-limit hits
         try:
@@ -1318,31 +1354,96 @@ class Checker(IFeature):
             logger.exception("Checker: failed to load furygate city")
         return None
 
-    def _db_save_furygate_city(self, guild_id: int, city: str) -> None:
+    def _db_save_furygate_city(self, guild_id: int, city: Optional[str]) -> None:
         self._db_init_furygate_table()
         try:
             with self.client.db as db:
-                db.execute(
-                    "INSERT OR REPLACE INTO furygate (guild_id, city) VALUES (?, ?)",
-                    (guild_id, city),
-                )
+                if city is None:
+                    # Store NULL in database for None
+                    db.execute(
+                        "INSERT OR REPLACE INTO furygate (guild_id, city) VALUES (?, NULL)",
+                        (guild_id,),
+                    )
+                else:
+                    db.execute(
+                        "INSERT OR REPLACE INTO furygate (guild_id, city) VALUES (?, ?)",
+                        (guild_id, city),
+                    )
         except Exception:
             logger.exception("Checker: failed to save furygate city")
 
-    def _get_furygate_city(self, guild_id: int) -> str:
-        # Default to 'Carlin' if not set
+    def _get_furygate_city(self, guild_id: int) -> Optional[str]:
+        # Return None if not set or explicitly set to None (no default)
         try:
             if guild_id in self._furygate_city:
                 return self._furygate_city[guild_id]
             city = self._db_load_furygate_city(guild_id)
-            if not city:
-                city = 'Carlin'
-                self._db_save_furygate_city(guild_id, city)
+            # Store in cache (can be None)
             self._furygate_city[guild_id] = city
             return city
         except Exception:
-            return 'Carlin'
+            return None
 
-    def _set_furygate_city(self, guild_id: int, city: str) -> None:
+    def _set_furygate_city(self, guild_id: int, city: Optional[str]) -> None:
         self._furygate_city[guild_id] = city
         self._db_save_furygate_city(guild_id, city)
+
+    def _reset_all_furygate_cities(self) -> None:
+        """Reset all furygate cities to None. Called during daily refresh at 10:00."""
+        try:
+            with self.client.db as db:
+                # Get all guild IDs that have furygate settings
+                rows = db.execute("SELECT guild_id FROM furygate").fetchall()
+                for (guild_id,) in rows:
+                    self._set_furygate_city(guild_id, None)
+        except Exception:
+            logger.exception("Failed to reset furygate cities")
+
+    # --------------------- Boss check timestamp persistence ---------------------
+    def _db_init_active_table(self):
+        """Create table to persist boss check timestamps across bot restarts."""
+        try:
+            with self.client.db as db:
+                db.execute(
+                    """CREATE TABLE IF NOT EXISTS checker_active 
+                       (guild_id INTEGER, message_id INTEGER, area TEXT, boss_key TEXT, 
+                        last_check_ts INTEGER, 
+                        PRIMARY KEY(guild_id, message_id, area, boss_key))"""
+                )
+        except Exception:
+            logger.exception("Checker: failed to init checker_active table")
+
+    def _db_load_active(self, guild_id: int, message_id: int) -> Dict[str, int]:
+        """Load boss check timestamps from database for a specific message."""
+        self._db_init_active_table()
+        active: Dict[str, int] = {}
+        try:
+            with self.client.db as db:
+                db.execute(
+                    "SELECT area, boss_key, last_check_ts FROM checker_active WHERE guild_id=? AND message_id=?",
+                    (guild_id, message_id)
+                )
+                rows = db.fetchall() or []
+                for area, boss_key, ts in rows:
+                    if isinstance(area, str) and isinstance(boss_key, str) and isinstance(ts, int):
+                        key = self._make_active_key(area, boss_key)
+                        active[key] = ts
+        except Exception:
+            logger.exception("Checker: failed to load active timestamps from db for guild %s msg %s", guild_id, message_id)
+        return active
+
+    def _db_save_active(self, guild_id: int, message_id: int, area: str, boss_key: str, timestamp: int):
+        """Save a boss check timestamp to database."""
+        self._db_init_active_table()
+        try:
+            with self.client.db as db:
+                db.execute(
+                    """INSERT OR REPLACE INTO checker_active 
+                       (guild_id, message_id, area, boss_key, last_check_ts) 
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (guild_id, message_id, area, boss_key, timestamp)
+                )
+        except Exception:
+            logger.exception("Checker: failed to save active timestamp for %s/%s", area, boss_key)
+
+
