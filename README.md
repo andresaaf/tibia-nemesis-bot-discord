@@ -128,7 +128,7 @@ The bot requires the following intents:
    ```
    /checkerworld <world>
    ```
-   Choose from available worlds (Wadira, Zephyra, etc.)
+   Choose from available worlds (Kalanta, etc.)
 
 3. **Set Up Checker**
    ```

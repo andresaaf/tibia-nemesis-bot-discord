@@ -138,6 +138,8 @@ class Checker(IFeature):
         self._area_msg_ids: Dict[str, int] = {}
         # raids summary message id
         self._raids_msg_id: Optional[int] = None
+        # Cache last raids content to avoid unnecessary edits
+        self._last_raids_content: Optional[str] = None
         # Updater interface to determine which bosses can spawn today
         self._updater = CheckerUpdater(self.client)
         # Default button timing thresholds (in seconds)
@@ -496,12 +498,26 @@ class Checker(IFeature):
             if not bosses:
                 continue
             active = area_active_map.get(area, {})
-            content = self._build_area_content(area, bosses, active)
-            view = self._view_for_area(area, bosses, active, channel.guild.id, percent_map, allowed)
             existing = existing_area_msgs.get(area)
             if existing is not None:
+                # Check if content changed before editing
+                try:
+                    new_state = self._compute_area_style_state(area, bosses, active, channel.guild.id, percent_map, allowed)
+                    old_state = self._last_style_state.get(existing.id)
+                    if old_state is not None and old_state == new_state:
+                        # No change needed, just cache the message reference
+                        self._active[existing.id] = dict(active)
+                        self._message_area[existing.id] = area
+                        self._area_msg_ids[area] = existing.id
+                        self._messages[existing.id] = existing
+                        continue
+                except Exception:
+                    new_state = None
+                
                 # Edit in place
                 try:
+                    content = self._build_area_content(area, bosses, active)
+                    view = self._view_for_area(area, bosses, active, channel.guild.id, percent_map, allowed)
                     await existing.edit(content=content, view=view)
                     self._active[existing.id] = dict(self._active.get(existing.id, {})) or {}
                     self._message_area[existing.id] = area
@@ -509,15 +525,15 @@ class Checker(IFeature):
                     self._db_save_message_id(guild_id, area, existing.id)
                     # cache and record last style state
                     self._messages[existing.id] = existing
-                    try:
-                        style_state = self._compute_area_style_state(area, bosses, self._active.get(existing.id, {}), channel.guild.id, percent_map, allowed)
-                        self._last_style_state[existing.id] = style_state
-                    except Exception:
-                        pass
+                    if new_state is not None:
+                        self._last_style_state[existing.id] = new_state
                 except Exception:
                     logger.exception("Checker: failed to edit area message for %s", area)
             else:
+                # Create new message
                 try:
+                    content = self._build_area_content(area, bosses, active)
+                    view = self._view_for_area(area, bosses, active, channel.guild.id, percent_map, allowed)
                     sent = await channel.send(content, view=view)
                     self._active[sent.id] = dict(active)
                     self._message_area[sent.id] = area
@@ -537,15 +553,23 @@ class Checker(IFeature):
         try:
             raids_text = await self._build_possible_raids_content(percent_map)
             if existing_raids_msg is not None:
-                try:
-                    await existing_raids_msg.edit(content=raids_text)
+                # Only edit if content changed
+                if self._last_raids_content != raids_text:
+                    try:
+                        await existing_raids_msg.edit(content=raids_text)
+                        self._last_raids_content = raids_text
+                        self._raids_msg_id = existing_raids_msg.id
+                        self._messages[existing_raids_msg.id] = existing_raids_msg
+                        self._db_save_message_id(guild_id, 'RAIDS', existing_raids_msg.id)
+                    except Exception:
+                        logger.exception("Checker: failed to edit Possible Raids message")
+                else:
+                    # No change, just cache the message reference
                     self._raids_msg_id = existing_raids_msg.id
                     self._messages[existing_raids_msg.id] = existing_raids_msg
-                    self._db_save_message_id(guild_id, 'RAIDS', existing_raids_msg.id)
-                except Exception:
-                    logger.exception("Checker: failed to edit Possible Raids message")
             else:
                 sent = await channel.send(raids_text)
+                self._last_raids_content = raids_text
                 self._raids_msg_id = sent.id
                 self._messages[sent.id] = sent
                 self._db_save_message_id(guild_id, 'RAIDS', sent.id)
@@ -897,6 +921,7 @@ class Checker(IFeature):
         except Exception:
             logger.exception("Checker: failed to schedule debounced history embed update")
 
+            
     async def close(self):
         if self._task and not self._task.cancelled():
             self._task.cancel()

@@ -8,8 +8,7 @@ logger = logging.getLogger(__name__)
 
 # Tibia game worlds list TODO: fetch from API if possible
 WORLDS = [
-    "Wadira",
-    "Zephyra",
+    "Kalanta"
 ]
 
 class CheckerUpdater:
