@@ -218,7 +218,7 @@ class BossAnnouncer(IFeature):
             
             if not redirected:
                 # Defer the response since we're posting in the same channel
-                await interaction.response.defer()
+                await interaction.response.defer(ephemeral=True)
             
             # Create the announcement using the helper method
             try:
@@ -235,10 +235,9 @@ class BossAnnouncer(IFeature):
                 
                 # Respond appropriately based on whether we redirected
                 if not redirected:
-                    # We already deferred, so the announcement IS the response
-                    # Just acknowledge completion
+                    # We already deferred with ephemeral=True, so just delete it silently
                     try:
-                        await interaction.followup.send("✅ Announcement created!", ephemeral=True)
+                        await interaction.delete_original_response()
                     except Exception:
                         pass
                 else:
