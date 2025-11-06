@@ -490,6 +490,7 @@ class RoleHandler(IFeature):
         if payload.message_id in self._role_messages:
             emoji = str(payload.emoji)
             if emoji in self._role_messages[payload.message_id]:
+                # This is an authorized emoji - add the role
                 role_id = self._role_messages[payload.message_id][emoji]
                 guild = self.client.get_guild(payload.guild_id)
                 if guild:
@@ -500,6 +501,20 @@ class RoleHandler(IFeature):
                             await member.add_roles(role, reason="Role reaction add")
                         except Exception as e:
                             logger.error(f"Failed to add role {role.id} to member {member.id}: {e}")
+            else:
+                # Unauthorized emoji - remove it
+                try:
+                    guild = self.client.get_guild(payload.guild_id)
+                    if guild:
+                        channel = guild.get_channel(payload.channel_id)
+                        if channel:
+                            message = await channel.fetch_message(payload.message_id)
+                            member = guild.get_member(payload.user_id)
+                            if message and member:
+                                await message.remove_reaction(payload.emoji, member)
+                                logger.info(f"Removed unauthorized reaction {emoji} from user {payload.user_id} on role message {payload.message_id}")
+                except Exception as e:
+                    logger.error(f"Failed to remove unauthorized reaction {emoji} from message {payload.message_id}: {e}")
                             
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
         """Handle reaction removes."""
