@@ -39,6 +39,140 @@ class BossAnnouncer(IFeature):
         except Exception:
             logger.exception("Failed to init boss_channels table")
 
+    async def on_message(self, message: discord.Message):
+        """Listen for role mentions in boss channels and create announcements automatically."""
+        # Ignore bot messages
+        if message.author.bot:
+            return
+        
+        # Only process messages in registered boss channels
+        if message.channel.id not in self._boss_channels:
+            return
+        
+        # Check if message has exactly one role mention
+        if len(message.role_mentions) == 0:
+            # No role mentions - delete the message
+            try:
+                await message.delete()
+            except Exception:
+                logger.debug("Could not delete message without role mentions (may lack permissions)")
+            return
+        
+        if len(message.role_mentions) > 1:
+            # Multiple role mentions - delete the message
+            try:
+                await message.delete()
+            except Exception:
+                logger.debug("Could not delete message with multiple role mentions (may lack permissions)")
+            return
+        
+        # Get the single role mention
+        role = message.role_mentions[0]
+        
+        # Check if the role is a configured boss role
+        if role.name not in self._boss_role_names:
+            # Not a valid boss role - delete the message
+            try:
+                await message.delete()
+            except Exception:
+                logger.debug(f"Could not delete message with invalid boss role {role.name} (may lack permissions)")
+            return
+        
+        # Extract the message text (remove role mention to get the custom message)
+        custom_message = message.content.replace(f"<@&{role.id}>", "").strip()
+        
+        # If the message is empty after removing mention, set to None
+        if not custom_message:
+            custom_message = None
+        
+        # Create the boss announcement
+        try:
+            await self._create_boss_announcement(
+                channel=message.channel,
+                role=role,
+                creator=message.author,
+                custom_message=custom_message,
+                original_message=message
+            )
+        except Exception:
+            logger.exception(f"Failed to create boss announcement from message for role {role.name}")
+
+    async def _create_boss_announcement(
+        self, 
+        channel: discord.TextChannel, 
+        role: discord.Role, 
+        creator: discord.User | discord.Member,
+        custom_message: Optional[str] = None,
+        original_message: Optional[discord.Message] = None
+    ) -> Optional[discord.Message]:
+        """Helper method to create a boss announcement. Used by both /boss command and message listener."""
+        # Validate that the role corresponds to a configured boss
+        if not role or role.name not in self._boss_role_names:
+            return None
+
+        # initialize state
+        state = {
+            "creator": creator.id,
+            "role_id": role.id,
+            "coming": [],
+            "ready": [],
+            "killed": [],
+            "killed_enabled": False,
+        }
+        
+        # Snapshot latest checks at creation time only
+        try:
+            state["latest_checks_lines"] = await self._recent_checks_lines_for_role(role_name=role.name, limit=4)
+        except Exception:
+            state["latest_checks_lines"] = []
+
+        # build initial embed
+        embed = await self._build_embed(role, state)
+
+        # Determine headline based on whether this boss is a raid
+        is_raid = False
+        if role and role.name:
+            for _k, _data in BOSSES.items():
+                if _data.get('role') == role.name:
+                    is_raid = bool(_data.get('raid'))
+                    break
+
+        # Create view with buttons
+        view = discord.ui.View(timeout=None)
+        # For raids, skip Coming/Ready/Remove me buttons
+        if not is_raid:
+            view.add_item(discord.ui.Button(style=discord.ButtonStyle.primary, label="Coming", custom_id="boss:coming"))
+            view.add_item(discord.ui.Button(style=discord.ButtonStyle.success, label="Ready", custom_id="boss:ready"))
+            view.add_item(discord.ui.Button(style=discord.ButtonStyle.danger, label="Remove me", custom_id="boss:remove"))
+        view.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="💀", custom_id="boss:skull"))
+        view.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="❌", custom_id="boss:close"))
+
+        # Build content
+        headline = "Raid!" if is_raid else "Boss spawn!"
+        content = f"{role.mention} {headline}"
+        if custom_message:
+            content += f"\n{custom_message}"
+
+        # Send the announcement
+        try:
+            msg = await channel.send(content=content, embed=embed, view=view)
+            
+            # Store the initialized state keyed by message id
+            self._state[msg.id] = state
+            self._locks[msg.id] = asyncio.Lock()
+            
+            # If this was triggered by a message (not slash command), delete the original trigger message
+            if original_message:
+                try:
+                    await original_message.delete()
+                except Exception:
+                    logger.debug("Could not delete original trigger message (may lack permissions)")
+            
+            return msg
+        except Exception:
+            logger.exception("Failed to send boss announcement")
+            return None
+
     async def on_ready(self):
         if self._cmd_registered:
             return
@@ -79,69 +213,42 @@ class BossAnnouncer(IFeature):
                 )
                 return
 
-            # initialize state
-            state = {
-                "creator": interaction.user.id,
-                "role_id": role.id,
-                "coming": [],
-                "ready": [],
-                "killed": [],
-                "killed_enabled": False,
-            }
-            # Snapshot latest checks at creation time only
+            # If we're already in the registered channel, post as the interaction response
+            redirected = not (channel and target_channel and channel.id == target_channel.id)
+            
+            if not redirected:
+                # Defer the response since we're posting in the same channel
+                await interaction.response.defer()
+            
+            # Create the announcement using the helper method
             try:
-                state["latest_checks_lines"] = await self._recent_checks_lines_for_role(role_name=role.name, limit=4)
-            except Exception:
-                state["latest_checks_lines"] = []
-
-            # build initial embed via _build_embed for consistency
-            embed = await self._build_embed(role, state)
-
-            # Determine headline based on whether this boss is a raid
-            is_raid = False
-            if role and role.name:
-                for _k, _data in BOSSES.items():
-                    if _data.get('role') == role.name:
-                        is_raid = bool(_data.get('raid'))
-                        break
-
-            view = discord.ui.View(timeout=None)
-            # For raids, skip Coming/Ready/Remove me buttons
-            if not is_raid:
-                view.add_item(discord.ui.Button(style=discord.ButtonStyle.primary, label="Coming", custom_id="boss:coming"))
-                view.add_item(discord.ui.Button(style=discord.ButtonStyle.success, label="Ready", custom_id="boss:ready"))
-                view.add_item(discord.ui.Button(style=discord.ButtonStyle.danger, label="Remove me", custom_id="boss:remove"))
-            view.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="💀", custom_id="boss:skull"))
-            view.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="❌", custom_id="boss:close"))
-
-            try:
-                headline = "Raid!" if is_raid else "Boss spawn!"
-
-                # Build content without the old 'Click a button to sign up.' line; append optional message on new line
-                content = f"{role.mention} {headline}"
-                if message:
-                    content += f"\n{message}"
-
-                # If we're already in the registered channel, post as the interaction response
-                redirected = not (channel and target_channel and channel.id == target_channel.id)
+                msg = await self._create_boss_announcement(
+                    channel=target_channel,
+                    role=role,
+                    creator=interaction.user,
+                    custom_message=message,
+                    original_message=None  # Don't delete slash command trigger
+                )
+                
+                if msg is None:
+                    raise Exception("Failed to create announcement")
+                
+                # Respond appropriately based on whether we redirected
                 if not redirected:
-                    await interaction.response.send_message(
-                        content=content,
-                        embed=embed,
-                        view=view,
-                    )
-                    msg = await interaction.original_response()
+                    # We already deferred, so the announcement IS the response
+                    # Just acknowledge completion
+                    try:
+                        await interaction.followup.send("✅ Announcement created!", ephemeral=True)
+                    except Exception:
+                        pass
                 else:
-                    # Send the announcement to the target channel
-                    msg = await target_channel.send(content=content, embed=embed, view=view)
-                    # Only in the redirect case, acknowledge with a link ephemerally
+                    # Send ephemeral confirmation with link
                     try:
                         await interaction.response.send_message(
                             f"Announcement created in {target_channel.mention}: {msg.jump_url}",
                             ephemeral=True,
                         )
                     except Exception:
-                        # fallback if already responded or other issue
                         try:
                             await interaction.followup.send(
                                 f"Announcement created in {target_channel.mention}: {msg.jump_url}",
@@ -152,17 +259,16 @@ class BossAnnouncer(IFeature):
             except Exception:
                 logger.exception("Failed to send boss announcement")
                 try:
-                    await interaction.response.send_message("Failed to create announcement. Check permissions.", ephemeral=True)
+                    if not redirected:
+                        await interaction.followup.send("Failed to create announcement. Check permissions.", ephemeral=True)
+                    else:
+                        await interaction.response.send_message("Failed to create announcement. Check permissions.", ephemeral=True)
                 except Exception:
                     try:
                         await interaction.followup.send("Failed to create announcement. Check permissions.", ephemeral=True)
                     except Exception:
                         pass
                 return
-
-            # store the initialized state keyed by message id
-            self._state[msg.id] = state
-            self._locks[msg.id] = asyncio.Lock()
 
         try:
             # Register channel management commands and /boss
