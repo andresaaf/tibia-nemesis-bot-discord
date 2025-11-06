@@ -6,10 +6,14 @@ import logging
 import hashlib
 from typing import Dict, List, Set, Tuple, Union, Optional
 from datetime import datetime, timezone, time as dtime, timedelta
+from zoneinfo import ZoneInfo
 from .Bosses import BOSSES
 from .CheckerUpdater import CheckerUpdater, WORLDS
 
 logger = logging.getLogger(__name__)
+
+# CET timezone for display
+CET = ZoneInfo("CET")
 
 AREAS = {
     "Ab'Dendriel | Carlin | Kazordoon": [
@@ -461,7 +465,7 @@ class Checker(IFeature):
         # Ensure first message exists
         try:
             if first_msg is None:
-                sent = await channel.send(embed=self._build_first_embed())
+                sent = await channel.send(embed=self._build_first_embed(guild_id))
                 first_msg = sent
                 self._db_save_message_id(guild_id, 'FIRST', sent.id)
             self._messages[first_msg.id] = first_msg
@@ -582,7 +586,7 @@ class Checker(IFeature):
             if first_msg is None:
                 first_msg = await channel.fetch_message(self._first_msg_id)
                 self._messages[self._first_msg_id] = first_msg
-            await first_msg.edit(embed=self._build_first_embed())
+            await first_msg.edit(embed=self._build_first_embed(guild_id))
         except Exception:
             logger.exception("Checker: failed to update first message %s", self._first_msg_id)
 
@@ -629,8 +633,16 @@ class Checker(IFeature):
                     hist.append((ts_text, user, area, boss))
         return hist[:MAX_HISTORY]
 
-    def _build_first_embed(self) -> discord.Embed:
-        emb = discord.Embed(title="Boss Checks", description="", color=0x0066CC)
+    def _build_first_embed(self, guild_id: Optional[int] = None) -> discord.Embed:
+        # Get world name for title
+        world = "Unknown"
+        if guild_id:
+            try:
+                world = self._updater.get_world(guild_id) or "Unknown"
+            except Exception:
+                pass
+        
+        emb = discord.Embed(title=f"Boss Checks - {world}", description="", color=0x0066CC)
         legend_text = (
             "Click the button after checking a boss.\n\n"
             "Boss Check Legend:\n"
@@ -642,7 +654,7 @@ class Checker(IFeature):
         # Fast path when no history
         if not self._history:
             emb.description = f"{legend_text}\n\nNo checks yet."
-            emb.set_footer(text=f"Updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            emb.set_footer(text=f"Updated: {datetime.now(CET).strftime('%Y-%m-%d %H:%M:%S %Z')}")
             return emb
         # Non-blocking snapshot; writes are rare and protected by a lock
         emb.description = legend_text
@@ -686,7 +698,7 @@ class Checker(IFeature):
         emb.add_field(name="PLAYER", value=col_text(player_col), inline=True)
         emb.add_field(name="TIME", value=col_text(time_col), inline=True)
 
-        emb.set_footer(text=f"Updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        emb.set_footer(text=f"Updated: {datetime.now(CET).strftime('%Y-%m-%d %H:%M:%S %Z')}")
         return emb
 
     def _build_area_content(self, area: str, bosses: List[str], active: Dict[str, int]) -> str:
@@ -917,7 +929,7 @@ class Checker(IFeature):
 
         # Debounce the history embed update as well
         try:
-            self._schedule_embed_update(msg.channel)
+            self._schedule_embed_update(msg.channel, guild_id)
         except Exception:
             logger.exception("Checker: failed to schedule debounced history embed update")
 
@@ -1081,10 +1093,10 @@ class Checker(IFeature):
         return state
 
     def _schedule_area_message_update(self, channel: discord.abc.Messageable, msg_id: int, area: str, guild_id: int, delay_sec: Optional[float] = None):
-        # Only one debounce task per message id
+        # Cancel any existing debounce task for this message to ensure we show latest state
         existing = self._debounce_tasks.get(msg_id)
         if existing and not existing.done():
-            return
+            existing.cancel()
 
         async def _runner():
             try:
@@ -1154,9 +1166,10 @@ class Checker(IFeature):
         task = asyncio.create_task(_runner())
         self._debounce_tasks[msg_id] = task
 
-    def _schedule_embed_update(self, channel: discord.abc.Messageable, delay_sec: Optional[float] = None):
+    def _schedule_embed_update(self, channel: discord.abc.Messageable, guild_id: Optional[int] = None, delay_sec: Optional[float] = None):
+        # Cancel existing task to ensure latest history is shown
         if self._embed_update_task and not self._embed_update_task.done():
-            return
+            self._embed_update_task.cancel()
 
         async def _runner():
             try:
@@ -1169,7 +1182,7 @@ class Checker(IFeature):
                     if first_msg is None:
                         first_msg = await channel.fetch_message(self._first_msg_id)
                         self._messages[self._first_msg_id] = first_msg
-                    await first_msg.edit(embed=self._build_first_embed())
+                    await first_msg.edit(embed=self._build_first_embed(guild_id))
                     # On success, gently reduce embed backoff
                     try:
                         self._embed_debounce_backoff_sec = max(
