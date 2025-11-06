@@ -97,21 +97,24 @@ class BossAnnouncer(IFeature):
             # build initial embed via _build_embed for consistency
             embed = await self._build_embed(role, state)
 
+            # Determine headline based on whether this boss is a raid
+            is_raid = False
+            if role and role.name:
+                for _k, _data in BOSSES.items():
+                    if _data.get('role') == role.name:
+                        is_raid = bool(_data.get('raid'))
+                        break
+
             view = discord.ui.View(timeout=None)
-            view.add_item(discord.ui.Button(style=discord.ButtonStyle.primary, label="Coming", custom_id="boss:coming"))
-            view.add_item(discord.ui.Button(style=discord.ButtonStyle.success, label="Ready", custom_id="boss:ready"))
-            view.add_item(discord.ui.Button(style=discord.ButtonStyle.danger, label="Remove me", custom_id="boss:remove"))
+            # For raids, skip Coming/Ready/Remove me buttons
+            if not is_raid:
+                view.add_item(discord.ui.Button(style=discord.ButtonStyle.primary, label="Coming", custom_id="boss:coming"))
+                view.add_item(discord.ui.Button(style=discord.ButtonStyle.success, label="Ready", custom_id="boss:ready"))
+                view.add_item(discord.ui.Button(style=discord.ButtonStyle.danger, label="Remove me", custom_id="boss:remove"))
             view.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="💀", custom_id="boss:skull"))
             view.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="❌", custom_id="boss:close"))
 
             try:
-                # Determine headline based on whether this boss is a raid
-                is_raid = False
-                if role and role.name:
-                    for _k, _data in BOSSES.items():
-                        if _data.get('role') == role.name:
-                            is_raid = bool(_data.get('raid'))
-                            break
                 headline = "Raid!" if is_raid else "Boss spawn!"
 
                 # Build content without the old 'Click a button to sign up.' line; append optional message on new line
@@ -284,9 +287,12 @@ class BossAnnouncer(IFeature):
         except Exception:
             pass
 
-        # Show Coming and Ready side-by-side
-        embed.add_field(name="Coming", value=list_names(state["coming"]), inline=True)
-        embed.add_field(name="Ready", value=list_names(state["ready"]), inline=True)
+        # For raids, skip Coming and Ready columns
+        if not is_raid:
+            # Show Coming and Ready side-by-side
+            embed.add_field(name="Coming", value=list_names(state["coming"]), inline=True)
+            embed.add_field(name="Ready", value=list_names(state["ready"]), inline=True)
+        
         # Show Killed column only if enabled
         if state.get("killed_enabled"):
             embed.add_field(name="Killed 💀", value=list_names(state["killed"]), inline=True)
@@ -540,6 +546,15 @@ class BossAnnouncer(IFeature):
                 role = None
                 if guild:
                     role = guild.get_role(state["role_id"])
+                
+                # Determine if this is a raid boss
+                is_raid = False
+                if role and role.name:
+                    for _k, _data in BOSSES.items():
+                        if _data.get('role') == role.name:
+                            is_raid = bool(_data.get('raid'))
+                            break
+                
                 embed = await self._build_embed(role if role else (interaction.guild and interaction.guild.default_role), state)
                 # Recreate view depending on whether Killed column is enabled
                 view = discord.ui.View(timeout=None)
@@ -548,10 +563,12 @@ class BossAnnouncer(IFeature):
                     view.add_item(discord.ui.Button(style=discord.ButtonStyle.danger, label="Killed 💀", custom_id="boss:killed"))
                     #view.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="❌", custom_id="boss:close"))
                 else:
-                    view.add_item(discord.ui.Button(style=discord.ButtonStyle.primary, label="Coming", custom_id="boss:coming"))
-                    view.add_item(discord.ui.Button(style=discord.ButtonStyle.success, label="Ready", custom_id="boss:ready"))
-                    # "Remove me" button (red) removes the user from Coming/Ready/Killed
-                    view.add_item(discord.ui.Button(style=discord.ButtonStyle.danger, label="Remove me", custom_id="boss:remove"))
+                    # For raids, skip Coming/Ready/Remove me buttons
+                    if not is_raid:
+                        view.add_item(discord.ui.Button(style=discord.ButtonStyle.primary, label="Coming", custom_id="boss:coming"))
+                        view.add_item(discord.ui.Button(style=discord.ButtonStyle.success, label="Ready", custom_id="boss:ready"))
+                        # "Remove me" button (red) removes the user from Coming/Ready/Killed
+                        view.add_item(discord.ui.Button(style=discord.ButtonStyle.danger, label="Remove me", custom_id="boss:remove"))
                     view.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="💀", custom_id="boss:skull"))
                     view.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="❌", custom_id="boss:close"))
 

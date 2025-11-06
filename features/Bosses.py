@@ -346,7 +346,7 @@ BOSSES = {
         'name': 'Hatebreeder',
         'emoji': 'Hatebreeder',
         'role': 'Hatebreeder',
-        'price': 400000
+        'price': 500000
     },
     'High Templar Cobrass': {
         'name': 'High Templar Cobrass',
@@ -683,7 +683,7 @@ BOSSES = {
         'name': 'Tzumrah the Dazzler',
         'emoji': 'TzumrahTheDazzler',
         'role': 'Tzumrah the Dazzler',
-        'price': 200000
+        'price': 300000
     },
     'Undead Cavebear': {
         'name': 'Undead Cavebear',
