@@ -16,6 +16,12 @@ class CheckerUpdater:
     Interface used by Checker to determine which bosses can spawn today and to refresh a cache.
 
     Uses the tibia-nemesis-api instead of direct HTML scraping.
+    
+    Fallback behavior:
+    - When API returns no data (new servers with no history): Shows all non-raid bosses
+    - When API returns data: Shows only bosses predicted to spawn today
+    - Persistent bosses (persist=True): Always shown regardless of API data
+    - Raid bosses: Only shown when API reports them with spawn percentages
     """
     def __init__(self, client):
         self.client = client
@@ -96,8 +102,19 @@ class CheckerUpdater:
             # Fetch from API (already filtered by inclusion_range on API side)
             spawnables, days_map_raw = await self._fetch_spawnables_from_api(world)
             if not spawnables:
-                logger.warning("CheckerUpdater: no spawnables returned from API for world %s", world)
-                self._allowed_today[guild_id] = set()
+                logger.warning("CheckerUpdater: no spawnables returned from API for world %s - showing all non-raid bosses as fallback", world)
+                # Fallback for new servers: show all non-raid bosses without percentages
+                # This ensures new servers (with no historical data) still have a functional checker
+                allowed: Set[str] = set()
+                canon_list: List[Tuple[str, Optional[int]]] = []
+                for key, data in BOSSES.items():
+                    if isinstance(data, dict) and not data.get('raid', False):
+                        name = str(data.get('name') or key)
+                        allowed.add(name)
+                        canon_list.append((name, None))
+                self._allowed_today[guild_id] = allowed
+                self._spawnables[guild_id] = canon_list
+                logger.info("CheckerUpdater: fallback enabled %d non-raid bosses for world %s", len(allowed), world)
                 return
 
             # Canonicalize names and build allowed set
@@ -176,7 +193,16 @@ class CheckerUpdater:
         # Fetch from API (already filtered by inclusion_range)
         raw_list, _ = await self._fetch_spawnables_from_api(world)
         if not raw_list:
-            return []
+            # Fallback for new servers: return all non-raid bosses
+            logger.info("CheckerUpdater: no API data for world %s, returning all non-raid bosses", world)
+            out: List[Tuple[str, Optional[int]]] = []
+            for key, data in BOSSES.items():
+                if isinstance(data, dict) and not data.get('raid', False):
+                    name = str(data.get('name') or key)
+                    out.append((name, None))
+            # Cache it
+            self._spawnables[guild_id] = list(out)
+            return out
         
         out: List[Tuple[str, Optional[int]]] = []
         for name, pct in raw_list:
