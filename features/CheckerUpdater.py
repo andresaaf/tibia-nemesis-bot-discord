@@ -15,13 +15,18 @@ class CheckerUpdater:
     """
     Interface used by Checker to determine which bosses can spawn today and to refresh a cache.
 
-    Uses the tibia-nemesis-api instead of direct HTML scraping.
+    Uses the tibia-nemesis-api GET /api/v1/bosses?world={world} endpoint.
     
-    Fallback behavior:
-    - When API returns no data (new servers with no history): Shows all non-raid bosses
-    - When API returns data: Shows only bosses predicted to spawn today
+    API behavior:
+    - New worlds (no kill history): Returns all bosses with spawnable=true, percent=null
+    - Established worlds: Returns bosses with spawnable=true and spawn predictions (percent)
+    - The API includes all bosses and uses the spawnable flag to indicate availability
+    
+    Bot behavior:
+    - Shows bosses where API returns spawnable=true
     - Persistent bosses (persist=True): Always shown regardless of API data
-    - Raid bosses: Only shown when API reports them with spawn percentages
+    - Raid bosses: Only shown when API reports them as spawnable
+    - Fallback: If API is unreachable, shows all non-raid bosses
     """
     def __init__(self, client):
         self.client = client
@@ -50,16 +55,19 @@ class CheckerUpdater:
 
     async def _fetch_spawnables_from_api(self, world: str) -> Tuple[List[Tuple[str, Optional[int]]], Dict[str, int]]:
         """
-        Fetch spawn data from API GET /api/v1/spawnables?world={world}
+        Fetch spawn data from API GET /api/v1/bosses?world={world}
         Returns (spawnables_list, days_map) where:
-          - spawnables_list: [(name, percent), ...]
+          - spawnables_list: [(name, percent), ...] for bosses with spawnable=true
           - days_map: {name: days_since_kill, ...}
+        
+        New API format: {"world": "...", "updated_at": "...", "bosses": [...]}
+        Boss entry: {"name": "...", "percent": int|null, "days_since_kill": int|null, "spawnable": bool}
         """
         if not self._api_base_url:
             logger.error("CheckerUpdater: API_BASE_URL not configured")
             return [], {}
         
-        url = f"{self._api_base_url}/api/v1/spawnables?world={world}"
+        url = f"{self._api_base_url}/api/v1/bosses?world={world}"
         try:
             timeout = aiohttp.ClientTimeout(total=15)
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -69,19 +77,24 @@ class CheckerUpdater:
                         return [], {}
                     data = await resp.json()
                     
-            # Parse JSON: [{"world": "...", "name": "...", "percent": int|null, "days_since_kill": int|null, "updated_at": "..."}]
+            # Parse new format: {"world": "...", "updated_at": "...", "bosses": [{"name": "...", "percent": int|null, "days_since_kill": int|null, "spawnable": bool}]}
             spawnables = []
             days_map = {}
-            for entry in data:
+            
+            bosses_list = data.get("bosses", [])
+            for entry in bosses_list:
                 name = entry.get("name")
                 percent = entry.get("percent")
                 days = entry.get("days_since_kill")
-                if name:
+                spawnable = entry.get("spawnable", False)
+                
+                if name and spawnable:
+                    # Only include bosses marked as spawnable
                     spawnables.append((name, percent))
                     if days is not None:
                         days_map[name] = days
             
-            logger.info("CheckerUpdater: fetched %d spawnables from API for %s", len(spawnables), world)
+            logger.info("CheckerUpdater: fetched %d spawnable bosses from API for %s", len(spawnables), world)
             return spawnables, days_map
         except Exception:
             logger.exception("CheckerUpdater: failed to fetch from API")
@@ -89,7 +102,8 @@ class CheckerUpdater:
 
     async def update_cache_for_guild(self, guild_id: int) -> None:
         """Refresh internal cache for a specific guild by fetching spawn data from API.
-        The API now handles inclusion_range filtering, so we just use the results directly.
+        The API returns bosses with spawnable=true flag. For new worlds with no kill history,
+        the API marks all bosses as spawnable=true with percent=null.
         """
         try:
             world = self.get_world(guild_id)
@@ -99,12 +113,12 @@ class CheckerUpdater:
                 self._allowed_today[guild_id] = set()
                 return
             
-            # Fetch from API (already filtered by inclusion_range on API side)
+            # Fetch from API (bosses with spawnable=true flag)
             spawnables, days_map_raw = await self._fetch_spawnables_from_api(world)
             if not spawnables:
-                logger.warning("CheckerUpdater: no spawnables returned from API for world %s - showing all non-raid bosses as fallback", world)
-                # Fallback for new servers: show all non-raid bosses without percentages
-                # This ensures new servers (with no historical data) still have a functional checker
+                logger.warning("CheckerUpdater: no spawnable bosses returned from API for world %s - using local fallback", world)
+                # Fallback for API connectivity issues: show all non-raid bosses without percentages
+                # Note: This should rarely happen since the new API returns all bosses with spawnable=true for new worlds
                 allowed: Set[str] = set()
                 canon_list: List[Tuple[str, Optional[int]]] = []
                 for key, data in BOSSES.items():
@@ -177,10 +191,10 @@ class CheckerUpdater:
 
     # --- Public helper to get spawnable bosses with percentages ---
     async def get_spawnables_with_percentages(self, guild_id: int) -> List[Tuple[str, Optional[int]]]:
-        """Return list of (boss_name, percent) for bosses that could technically spawn on the guild's world.
+        """Return list of (boss_name, percent) for bosses that could spawn on the guild's world.
         Names are canonicalized to BOSSES entries. If no world configured or fetch fails, returns empty list.
         Uses cached data when available; otherwise tries to fetch once.
-        The API now handles inclusion_range filtering, so we just canonicalize the results.
+        The API returns bosses with spawnable=true flag. Percent may be null for unknown/new worlds.
         """
         # Serve from cache if we have it
         if guild_id in self._spawnables:
@@ -190,11 +204,11 @@ class CheckerUpdater:
         if not world:
             return []
         
-        # Fetch from API (already filtered by inclusion_range)
+        # Fetch from API (bosses with spawnable=true)
         raw_list, _ = await self._fetch_spawnables_from_api(world)
         if not raw_list:
-            # Fallback for new servers: return all non-raid bosses
-            logger.info("CheckerUpdater: no API data for world %s, returning all non-raid bosses", world)
+            # Fallback for API connectivity issues: return all non-raid bosses
+            logger.info("CheckerUpdater: no API data for world %s, using local fallback", world)
             out: List[Tuple[str, Optional[int]]] = []
             for key, data in BOSSES.items():
                 if isinstance(data, dict) and not data.get('raid', False):
