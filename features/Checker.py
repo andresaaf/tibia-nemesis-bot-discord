@@ -873,7 +873,7 @@ class Checker(IFeature):
         if delta < ws:
             return discord.ButtonStyle.success, "✅"
         if delta < as_:
-            return discord.ButtonStyle.success, "❗"
+            return discord.ButtonStyle.success, "❕"
         if delta < rs:
             # No true orange style; use primary as closest alternative
             return discord.ButtonStyle.primary, "‼️"
