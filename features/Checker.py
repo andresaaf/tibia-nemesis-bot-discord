@@ -1109,6 +1109,15 @@ class Checker(IFeature):
             if not persistent and boss_key in killed_bosses:
                 continue
             
+            # Skip Furyosa if furygate is set to None (matches _view_for_area logic)
+            if boss_key == 'Furyosa':
+                try:
+                    city = self._get_furygate_city(guild_id)
+                    if city is None:
+                        continue
+                except Exception:
+                    pass
+            
             warn_s, alert_s, reset_s = self._thresholds_for_entry(b)
             if isinstance(b, dict):
                 base_name = str(b.get('role') or b.get('name') or name)
