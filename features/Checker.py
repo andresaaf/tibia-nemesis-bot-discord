@@ -13,7 +13,7 @@ from .CheckerUpdater import CheckerUpdater, WORLDS
 logger = logging.getLogger(__name__)
 
 # CET timezone for display
-CET = ZoneInfo("CET")
+CET = ZoneInfo("Europe/Berlin")
 
 AREAS = {
     "Ab'Dendriel | Carlin | Kazordoon": [
