@@ -620,6 +620,14 @@ class Checker(IFeature):
         """
         if not self._active:
             return
+        
+        # Track which boss_keys are serversave bosses for database cleanup
+        serversave_boss_keys: Set[str] = set()
+        for boss_key, meta in BOSSES.items():
+            if isinstance(meta, dict) and bool(meta.get('serversave', False)):
+                serversave_boss_keys.add(boss_key)
+        
+        # Clear from in-memory state
         for msg_id, active_map in list(self._active.items()):
             changed = False
             for k in list(active_map.keys()):
@@ -627,15 +635,25 @@ class Checker(IFeature):
                     _area, boss_key = k.split("|", 1)
                 except Exception:
                     continue
-                try:
-                    meta = BOSSES.get(boss_key)
-                    if isinstance(meta, dict) and bool(meta.get('serversave', False)):
-                        del active_map[k]
-                        changed = True
-                except Exception:
-                    continue
+                if boss_key in serversave_boss_keys:
+                    del active_map[k]
+                    changed = True
             if changed:
                 self._active[msg_id] = active_map
+        
+        # Clear from database
+        if serversave_boss_keys:
+            try:
+                self._db_init_active_table()
+                with self.client.db as db:
+                    # Delete all entries for serversave bosses
+                    placeholders = ','.join('?' * len(serversave_boss_keys))
+                    db.execute(
+                        f"DELETE FROM checker_active WHERE boss_key IN ({placeholders})",
+                        tuple(serversave_boss_keys)
+                    )
+            except Exception:
+                logger.exception("Checker: failed to clear serversave bosses from database")
 
     def _parse_history_from_embed(self, embed: discord.Embed) -> List[Tuple[Union[int, str], str, str, str]]:
         hist: List[Tuple[Union[int, str], str, str, str]] = []

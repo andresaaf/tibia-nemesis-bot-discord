@@ -161,13 +161,6 @@ class BossAnnouncer(IFeature):
             self._state[msg.id] = state
             self._locks[msg.id] = asyncio.Lock()
             
-            # If this was triggered by a message (not slash command), delete the original trigger message
-            if original_message:
-                try:
-                    await original_message.delete()
-                except Exception:
-                    logger.debug("Could not delete original trigger message (may lack permissions)")
-            
             return msg
         except Exception:
             logger.exception("Failed to send boss announcement")
