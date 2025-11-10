@@ -116,7 +116,7 @@ AREAS = {
     ],
 }
 
-MAX_HISTORY = 15 # 25
+MAX_HISTORY = 25
 MAX_CUSTOM_ID_LENGTH = 100  # Discord custom_id max length
 
 def _now_unix() -> int:
