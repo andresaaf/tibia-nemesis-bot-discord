@@ -43,7 +43,7 @@ python main.py
 - `/checkerworld <world>` - Configure which Tibia world to track
 - View spawnable bosses with real-time percentages
 - Click buttons to mark bosses as checked
-- Automatic daily refresh at 10:00 CET
+- Automatic daily refresh at 11:00 CET
 
 ### Boss Announcements
 - `/boss <boss_name>` - Announce a boss spawn
@@ -88,8 +88,8 @@ Required bot permissions:
 ## Integration with API
 
 The bot fetches boss spawn data from the API:
-- **API refreshes at 09:00 CET** - Scrapes spawn data from tibia-statistic.com
-- **Bot refreshes at 10:00 CET** - Fetches filtered data from API
+- **API refreshes at 10:30 CET** - Scrapes spawn data from tibia-statistic.com
+- **Bot refreshes at 11:00 CET** - Fetches filtered data from API
 - API applies `inclusion_range` filtering based on days since last kill
 - Bot displays only spawnable bosses with accurate percentages
 
@@ -160,4 +160,4 @@ Edit `features/Bosses.py` to update:
 - Configure worlds with `/checkerworld`
 - Test boss announcements with `/boss`
 - Set up Fury Gate with `/furygate`
-- Monitor daily refresh at 10:00 CET
+- Monitor daily refresh at 11:00 CET

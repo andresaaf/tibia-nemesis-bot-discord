@@ -568,7 +568,7 @@ class BossAnnouncer(IFeature):
                 # Enable the Killed column but do not add the clicking user automatically.
                 state["killed_enabled"] = True
                 
-                # Mark this boss as killed in the Checker so it's hidden until next 10:00 refresh
+                # Mark this boss as killed in the Checker so it's hidden until next 11:00 refresh
                 try:
                     if guild:
                         role = guild.get_role(state.get("role_id"))
