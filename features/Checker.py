@@ -293,7 +293,7 @@ class Checker(IFeature):
                         if city.value == "None":
                             self._set_furygate_city(guild_id, None)
                             user_name = getattr(interaction.user, "display_name", None) or getattr(interaction.user, "name", "User")
-                            await interaction.response.send_message(f"{user_name} set Fury Gate to None (Furyosa hidden)")
+                            await interaction.response.send_message(f"{user_name} set Fury Gate to None")
                         else:
                             self._set_furygate_city(guild_id, city.value)
                             user_name = getattr(interaction.user, "display_name", None) or getattr(interaction.user, "name", "User")
@@ -347,8 +347,6 @@ class Checker(IFeature):
             wait_seconds = (target - now).total_seconds()
             try:
                 await asyncio.sleep(wait_seconds)
-                # Reset furygate cities to None at 11:00
-                self._reset_all_furygate_cities()
                 await self._ensure_channel_messages_and_update(clear_killed=True)
             except asyncio.CancelledError:
                 break
@@ -858,16 +856,12 @@ class Checker(IFeature):
             cid = self._make_custom_id(area, boss_key)
             # Look up percentage by base boss name
             pct = percent_map.get(base_name)
-            # Adjust display name for Furyosa: append current Fury Gate city
-            # Skip Furyosa entirely if city is None
+            # Adjust display name for Furyosa: append current Fury Gate city if set
             label_name = name
             try:
                 if boss_key == 'Furyosa':
                     city = self._get_furygate_city(guild_id)
-                    if city is None:
-                        # Skip this boss if Fury Gate is set to None
-                        continue
-                    elif city:
+                    if city:
                         label_name = f"{name} ({city})"
             except Exception:
                 pass
@@ -1126,15 +1120,6 @@ class Checker(IFeature):
             # Skip if this boss has been marked as killed (but not if it's persistent)
             if not persistent and boss_key in killed_bosses:
                 continue
-            
-            # Skip Furyosa if furygate is set to None (matches _view_for_area logic)
-            if boss_key == 'Furyosa':
-                try:
-                    city = self._get_furygate_city(guild_id)
-                    if city is None:
-                        continue
-                except Exception:
-                    pass
             
             warn_s, alert_s, reset_s = self._thresholds_for_entry(b)
             if isinstance(b, dict):
@@ -1414,17 +1399,6 @@ class Checker(IFeature):
     def _set_furygate_city(self, guild_id: int, city: Optional[str]) -> None:
         self._furygate_city[guild_id] = city
         self._db_save_furygate_city(guild_id, city)
-
-    def _reset_all_furygate_cities(self) -> None:
-        """Reset all furygate cities to None. Called during daily refresh at 11:00."""
-        try:
-            with self.client.db as db:
-                # Get all guild IDs that have furygate settings
-                rows = db.execute("SELECT guild_id FROM furygate").fetchall()
-                for (guild_id,) in rows:
-                    self._set_furygate_city(guild_id, None)
-        except Exception:
-            logger.exception("Failed to reset furygate cities")
 
     # --------------------- Boss check timestamp persistence ---------------------
     def _db_init_active_table(self):
