@@ -174,7 +174,7 @@ class Checker(IFeature):
         self._boss_id_rev: Dict[str, str] = {}
         # Fury Gate city per guild (Carlin or Thais)
         self._furygate_city = {}
-        # Killed bosses per guild (boss_key set) - hidden until next 11:00 refresh
+        # Killed bosses per guild (boss_key set) - hidden until next refresh
         self._killed_bosses: Dict[int, Set[str]] = {}
 
     async def on_ready(self):
@@ -338,10 +338,10 @@ class Checker(IFeature):
         except Exception:
             logger.exception("Checker initial update failed")
 
-        # schedule daily 11:00 updates (API updates at 09:00, bot updates at 11:00)
+        # schedule daily 10:00 updates (API updates at 09:30, bot updates at 10:00)
         while True:
             now = datetime.now()
-            target = datetime.combine(now.date(), dtime(hour=11, minute=0, second=0))
+            target = datetime.combine(now.date(), dtime(hour=10, minute=0, second=0))
             if target <= now:
                 target = target + timedelta(days=1)
             wait_seconds = (target - now).total_seconds()
@@ -1292,7 +1292,7 @@ class Checker(IFeature):
 
     # --------------------- Killed boss tracking (for /boss command integration) ---------------------
     def mark_boss_killed(self, guild_id: int, role_name: str) -> None:
-        """Mark all bosses with the given role as killed (hidden from checker) until next 11:00 refresh.
+        """Mark all bosses with the given role as killed (hidden from checker) until next refresh.
         Called by BossAnnouncer when skull button is clicked.
         """
         if guild_id not in self._killed_bosses:
@@ -1305,7 +1305,7 @@ class Checker(IFeature):
                 logger.info("Checker: marked boss %s (role %s) as killed for guild %s", boss_key, role_name, guild_id)
     
     def clear_killed_bosses(self, guild_id: int) -> None:
-        """Clear all killed boss markers for a guild. Called during daily 11:00 refresh."""
+        """Clear all killed boss markers for a guild. Called during daily refresh."""
         if guild_id in self._killed_bosses:
             self._killed_bosses[guild_id].clear()
             logger.info("Checker: cleared killed bosses for guild %s", guild_id)

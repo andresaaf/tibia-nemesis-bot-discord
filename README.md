@@ -13,7 +13,7 @@ A Discord bot for tracking and announcing Tibia boss spawns with real-time spawn
   - ❕ Green (15-30 min) - Some time passed
   - ‼️ Blue (30-60 min) - Needs attention
   - ⏰ Red (60+ min) - Long overdue
-- **Auto-refresh daily** at 11:00 CET (1 hour after API refresh)
+- **Auto-refresh daily** at 10:00 CET (30 min after API refresh)
 - **Boss filtering** by spawn probability using inclusion_range logic
 - **Multi-world support** - Configure different Tibia worlds per server
 
@@ -163,7 +163,7 @@ tibia-statistic.com
    (see tibia-nemesis-api/README.md)
         ↓
    Discord Bot
-   ├── Fetches filtered data at 11:00 CET
+   ├── Fetches filtered data at 10:00 CET
    ├── Updates checker UI
    └── Shows only spawnable bosses
 ```
