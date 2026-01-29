@@ -385,15 +385,15 @@ class BossAnnouncer(IFeature):
         except Exception:
             pass
 
-        # For raids, skip Coming and Ready columns
+        # For raids, skip Coming, Ready, and Got Kill columns
         if not is_raid:
             # Show Coming and Ready side-by-side
             embed.add_field(name="Coming", value=list_names(state["coming"]), inline=True)
             embed.add_field(name="Ready", value=list_names(state["ready"]), inline=True)
         
-        # Show Killed column only if enabled
-        if state.get("killed_enabled"):
-            embed.add_field(name="Got Kill", value=list_names(state["killed"]), inline=True)
+            # Show Killed column only if enabled
+            if state.get("killed_enabled"):
+                embed.add_field(name="Got Kill", value=list_names(state["killed"]), inline=True)
 
         # Footer: "Found by <user>"
         creator_id = state.get("creator")
@@ -657,9 +657,9 @@ class BossAnnouncer(IFeature):
                 # Recreate view depending on whether Killed column is enabled
                 view = discord.ui.View(timeout=None)
                 if state.get("killed_enabled"):
-                    # Only the "Killed" button remains (per requirement)
-                    view.add_item(discord.ui.Button(style=discord.ButtonStyle.danger, label="Got Kill", custom_id="boss:killed"))
-                    #view.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="❌", custom_id="boss:close"))
+                    if not is_raid:
+                        # Only the "Killed" button remains (per requirement)
+                        view.add_item(discord.ui.Button(style=discord.ButtonStyle.danger, label="Got Kill", custom_id="boss:killed"))
                 else:
                     # For raids, skip Coming/Ready/Remove me buttons
                     if not is_raid:
