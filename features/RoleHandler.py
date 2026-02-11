@@ -126,6 +126,7 @@ OTHER_SECTIONS = {
         BOSSES['Undead Cavebear'],
         BOSSES['Wild Horse'],
         BOSSES['Yeti'],
+        BOSSES['Elf Overseer']
     ],
     "Archfoe": [
         BOSSES['Mawhawk'],

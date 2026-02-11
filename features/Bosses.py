@@ -195,6 +195,12 @@ BOSSES = {
         'role': 'Dreadmaw',
         'persist': True,
     },
+    'Elf Overseer': {
+        'name': 'Elf Overseer',
+        'emoji': 'ElfOverseer',
+        'role': 'Elf Overseer',
+        'price': 200000
+    },
     'Elvira Hammerthrust': {
         'name': 'Elvira Hammerthrust',
         'emoji': 'ElviraHammerthrust',
