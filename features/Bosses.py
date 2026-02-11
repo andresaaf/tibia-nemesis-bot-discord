@@ -326,7 +326,7 @@ BOSSES = {
         'name': 'Gravelord Oshuran',
         'emoji': 'GravelordOshuran',
         'role': 'Gravelord Oshuran',
-        'price': 200000
+        'price': 300000
     },
     'Groam': {
         'name': 'Groam',
