@@ -6,6 +6,7 @@ import asyncio
 from typing import Dict, Set, List, Tuple, Union, Optional
 from .Bosses import BOSSES
 from .Checker import Checker
+from .Highscore import Highscore
 
 logger = logging.getLogger(__name__)
 
@@ -602,6 +603,50 @@ class BossAnnouncer(IFeature):
                     _append_unique(state["killed"], user_id)
                     _remove(state["coming"], user_id)
                     _remove(state["ready"], user_id)
+                    
+                    # Track the kill for highscore when someone marks the boss as killed
+                    try:
+                        guild = interaction.guild
+                        if guild:
+                            # Get boss information
+                            role = guild.get_role(state.get("role_id"))
+                            if role and role.name:
+                                boss_key = None
+                                boss_price = 0
+                                for bk, bdata in BOSSES.items():
+                                    if bdata.get('role') == role.name:
+                                        boss_key = bk
+                                        boss_price = bdata.get('price', 0)
+                                        break
+                                
+                                if boss_key:
+                                    # Calculate total money from all participants (coming + ready + killed), excluding the finder
+                                    all_participants = set(state["coming"]) | set(state["ready"]) | set(state["killed"])
+                                    participants_for_money = all_participants - {user_id}
+                                    total_money = boss_price * len(participants_for_money)
+                                    
+                                    # Get the finder's name
+                                    finder_member = guild.get_member(user_id)
+                                    finder_name = finder_member.display_name if finder_member else f"User {user_id}"
+                                    
+                                    # Find and call the Highscore feature
+                                    highscore: Optional[Highscore] = None
+                                    for feat in getattr(self.client, 'features', []) or []:
+                                        if isinstance(feat, Highscore):
+                                            highscore = feat
+                                            break
+                                    
+                                    if highscore:
+                                        await highscore.record_kill(
+                                            guild.id,
+                                            user_id,
+                                            finder_name,
+                                            boss_key,
+                                            total_money,
+                                            list(participants_for_money)
+                                        )
+                    except Exception:
+                        logger.exception("BossAnnouncer: failed to track boss kill for highscore")
                 else:
                     # toggle off if already in killed
                     _remove(state["killed"], user_id)

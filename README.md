@@ -35,6 +35,22 @@ A Discord bot for tracking and announcing Tibia boss spawns with real-time spawn
 - Persists across bot restarts
 - Updates Furyosa button label automatically
 
+### 🏆 Highscore System
+- **Track boss kills** with finder and reward information
+- **Automatic reward calculation** based on number of participants
+- **Leaderboard ranking** by bosses found (primary) and total money (secondary)
+- **Per-guild leaderboards** with automatic updates in a single message
+- **Kill history** with timestamps for audit trails
+- **Supports up to 50 participants** in one leaderboard post
+
+#### How Highscore Works
+When a boss kill is recorded via the boss announcement:
+1. Finder clicks the **Got Kill** button (only after skull button enables killed mode)
+2. Money is calculated as: `boss_price × number_of_other_participants`
+3. The finder is excluded from the money calculation (only others count)
+4. All data is locked at the moment the button is clicked
+5. The leaderboard automatically updates in the designated channel, showing as many participants as can fit in a single post (ranked by bosses found, then total money)
+
 ## Architecture
 
 The bot follows a feature-based architecture with separation of concerns:
@@ -46,6 +62,7 @@ GolluxBot/
 │   ├── Checker.py          # Boss checker with interactive UI
 │   ├── CheckerUpdater.py   # API client for spawn data
 │   ├── BossAnnouncer.py    # Boss announcement system
+│   ├── Highscore.py        # Highscore leaderboard tracking
 │   ├── Bosses.py           # Boss metadata (emoji, roles, prices)
 │   ├── RoleHandler.py      # Role management
 │   └── PriceList.py        # Service pricing
@@ -142,6 +159,12 @@ The bot requires the following intents:
    ```
    Select which Fury Gate city is active.
 
+5. **Set Highscore Channel** (Optional)
+   ```
+   /highscorechannel <channel>
+   ```
+   Designate a channel for the highscore leaderboard.
+
 ## Commands
 
 | Command | Description | Permissions |
@@ -153,6 +176,7 @@ The bot requires the following intents:
 | `/setupbosschannel` | Register channel for announcements | Manage Channels |
 | `/removebosschannel` | Unregister channel | Manage Channels |
 | `/furygate <city>` | Set active Fury Gate city | None |
+| `/highscorechannel <channel>` | Set highscore leaderboard channel | Manage Server |
 
 ## Data Flow
 
@@ -177,6 +201,9 @@ The bot uses SQLite with the following tables:
 - `checker_messages` - Message IDs for updates
 - `boss_channels` - Registered announcement channels
 - `furygate` - Fury Gate city per guild
+- `highscore_config` - Highscore leaderboard channel per guild
+- `highscore_kills` - Individual kill records with finder, boss, money, and timestamp
+- `highscore_stats` - Aggregated statistics per user (bosses found, total money)
 
 ## Boss Metadata
 

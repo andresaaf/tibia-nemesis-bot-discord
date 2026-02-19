@@ -4,7 +4,7 @@ from pathlib import Path
 import os
 from Database import Database
 
-from features import RoleHandler, BossAnnouncer, PriceList, Checker
+from features import RoleHandler, BossAnnouncer, PriceList, Checker, Highscore
 
 logging.basicConfig(level=logging.INFO)
 
@@ -27,6 +27,7 @@ class GolluxBot(discord.Client):
             Checker(self),
             BossAnnouncer(self),
             RoleHandler(self),
+            Highscore(self),
         ]
 
     async def _safe_call(self, method_name, *args, **kwargs):
