@@ -182,7 +182,11 @@ class Highscore(IFeature):
                     embed.description = "No kills recorded yet. Get out there and find some bosses!"
                     return embed
                 
-                description_lines = []
+                # Build header and rows
+                lines = ["```"]
+                lines.append("Rank | Name           | Bosses | Money")
+                lines.append("-----+----------------+--------+---------")
+                
                 for idx, (user_id, bosses_found, total_money) in enumerate(stats, 1):
                     # Format money as kk (millions) or k (thousands)
                     if total_money >= 1000000:
@@ -191,12 +195,25 @@ class Highscore(IFeature):
                         money_str = f"{total_money // 1000}k"
                     else:
                         money_str = str(total_money)
-                    description_lines.append(
-                        f"**#{idx}** - <@{user_id}>\n"
-                        f"   Bosses: **{bosses_found}** | Money: **{money_str}**"
-                    )
+                    
+                    # Try to get member display name (with fallback to mention)
+                    try:
+                        guild = self.client.get_guild(guild_id)
+                        if guild:
+                            member = guild.get_member(user_id)
+                            if member:
+                                name = member.display_name[:13]  # Truncate to fit table
+                            else:
+                                name = f"User {user_id}"[:13]
+                        else:
+                            name = f"User {user_id}"[:13]
+                    except Exception:
+                        name = f"User {user_id}"[:13]
+                    
+                    lines.append(f"{idx:>4} | {name:<14} | {bosses_found:>6} | {money_str:>7}")
                 
-                embed.description = "\n".join(description_lines)
+                lines.append("```")
+                embed.description = "\n".join(lines)
         except Exception:
             logger.exception(f"Failed to get highscore embed for guild {guild_id}")
             embed.description = "Error loading highscore data."
