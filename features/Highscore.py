@@ -184,8 +184,8 @@ class Highscore(IFeature):
                 
                 # Build header and rows
                 lines = ["```"]
-                lines.append("Rank | Name           | Bosses | Money")
-                lines.append("-----+----------------+--------+---------")
+                lines.append("Rank | Name                     | Bosses | Money")
+                lines.append("-----+------------------------+--------+---------")
                 
                 for idx, (user_id, bosses_found, total_money) in enumerate(stats, 1):
                     # Format money as kk (millions) or k (thousands)
@@ -202,15 +202,15 @@ class Highscore(IFeature):
                         if guild:
                             member = guild.get_member(user_id)
                             if member:
-                                name = member.display_name[:13]  # Truncate to fit table
+                                name = member.display_name[:20]  # Truncate to fit table
                             else:
-                                name = f"User {user_id}"[:13]
+                                name = f"User {user_id}"[:20]
                         else:
-                            name = f"User {user_id}"[:13]
+                            name = f"User {user_id}"[:20]
                     except Exception:
-                        name = f"User {user_id}"[:13]
+                        name = f"User {user_id}"[:20]
                     
-                    lines.append(f"{idx:>4} | {name:<14} | {bosses_found:>6} | {money_str:>7}")
+                    lines.append(f"{idx:>4} | {name:<20} | {bosses_found:>6} | {money_str:>7}")
                 
                 lines.append("```")
                 embed.description = "\n".join(lines)
