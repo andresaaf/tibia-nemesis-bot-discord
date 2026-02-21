@@ -184,8 +184,8 @@ class Highscore(IFeature):
                 
                 # Build header and rows
                 lines = ["```"]
-                lines.append("Rank | Name                     | Bosses | Money")
-                lines.append("-----+------------------------+--------+---------")
+                lines.append("Rank | Name                 | Bosses |   Money")
+                lines.append("----+--------------------+------+-------")
                 
                 for idx, (user_id, bosses_found, total_money) in enumerate(stats, 1):
                     # Format money as kk (millions) or k (thousands)
