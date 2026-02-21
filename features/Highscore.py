@@ -95,6 +95,13 @@ class Highscore(IFeature):
 
             self.client.tree.add_command(set_highscore_channel)
             self._cmd_registered = True
+            
+            # Post initial leaderboards on startup for any configured guilds
+            for guild_id in self._highscore_channels.keys():
+                try:
+                    await self._update_leaderboard(guild_id)
+                except Exception:
+                    logger.exception(f"Failed to post initial leaderboard for guild {guild_id}")
         except Exception:
             logger.exception("Failed to register highscore commands")
 
@@ -177,8 +184,13 @@ class Highscore(IFeature):
                 
                 description_lines = []
                 for idx, (user_id, bosses_found, total_money) in enumerate(stats, 1):
-                    # Format money as k (thousands)
-                    money_str = f"{total_money // 1000}k" if total_money >= 1000 else str(total_money)
+                    # Format money as kk (millions) or k (thousands)
+                    if total_money >= 1000000:
+                        money_str = f"{total_money // 1000000}kk"
+                    elif total_money >= 1000:
+                        money_str = f"{total_money // 1000}k"
+                    else:
+                        money_str = str(total_money)
                     description_lines.append(
                         f"**#{idx}** - <@{user_id}>\n"
                         f"   Bosses: **{bosses_found}** | Money: **{money_str}**"
