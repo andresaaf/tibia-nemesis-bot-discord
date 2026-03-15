@@ -302,7 +302,8 @@ BOSSES = {
         'name': 'Ghazbaran',
         'emoji': 'Ghazbaran',
         'role': 'Ghazbaran',
-        'raid': ("00:00:00 An ancient evil is awakening in the mines beneath Hrodmir.\n"
+        'raid': True,
+        'raid_msg': ("00:00:00 An ancient evil is awakening in the mines beneath Hrodmir.\n"
                 "00:10:00 Demonic entities are entering the mortal realm in the Hrodmir mines.\n"
                 "00:20:00 The demonic master has revealed itself in the mines of Hrodmir.")
     },
