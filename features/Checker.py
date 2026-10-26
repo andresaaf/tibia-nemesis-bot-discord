@@ -946,7 +946,15 @@ class Checker(IFeature):
         async with lock:
             active = self._active.get(msg.id)
             if active is None or not isinstance(active, dict):
-                active = {}
+                # Not tracked in memory; restore other bosses' timestamps from the database
+                try:
+                    active = self._db_load_active(interaction.guild.id if interaction.guild else 0, msg.id)
+                except Exception:
+                    active = {}
+            # Make sure the tick loop keeps aging this message's buttons
+            self._message_area[msg.id] = area
+            self._area_msg_ids[area] = msg.id
+            self._messages.setdefault(msg.id, msg)
             key = self._make_active_key(area, boss)
             # Always record/refresh the check timestamp; do not toggle off
             ts = _now_unix()
@@ -1080,12 +1088,12 @@ class Checker(IFeature):
                             await msg_obj.edit(content=content, view=view)
                             if new_state is not None:
                                 self._last_style_state[msg_id] = new_state
-                        except Exception:
-                            # message might have been deleted; clean up
-                            self._active.pop(msg_id, None)
-                            self._message_area.pop(msg_id, None)
-                            self._locks.pop(msg_id, None)
-                            self._messages.pop(msg_id, None)
+                        except discord.NotFound:
+                            # Message was deleted; stop tracking it
+                            self._forget_message(msg_id)
+                        except Exception as e:
+                            # Keep tracking so the next tick retries the edit
+                            logger.warning("Checker: tick edit of area message %s (%s) failed: %r", msg_id, area, e)
             except asyncio.CancelledError:
                 break
             except Exception:
@@ -1200,10 +1208,12 @@ class Checker(IFeature):
                                 )
                         except Exception:
                             pass
-                        # message might be gone; clean up
-                        self._active.pop(msg_id, None)
-                        self._message_area.pop(msg_id, None)
-                        self._locks.pop(msg_id, None)
+                        if isinstance(e, discord.NotFound):
+                            # Message was deleted; stop tracking it
+                            self._forget_message(msg_id)
+                        else:
+                            # Keep tracking so the tick loop retries on its next pass
+                            logger.warning("Checker: debounced edit of area message %s (%s) failed: %r", msg_id, area, e)
             finally:
                 # Clear task entry
                 try:
@@ -1257,6 +1267,14 @@ class Checker(IFeature):
         self._embed_update_task = asyncio.create_task(_runner())
 
     # --------------------- Helpers and DB persistence ---------------------
+    def _forget_message(self, msg_id: int) -> None:
+        """Stop tracking an area message that no longer exists."""
+        self._active.pop(msg_id, None)
+        self._message_area.pop(msg_id, None)
+        self._locks.pop(msg_id, None)
+        self._messages.pop(msg_id, None)
+        self._last_style_state.pop(msg_id, None)
+
     def _make_active_key(self, area: str, boss_key: str) -> str:
         return f"{area}|{boss_key}"
 

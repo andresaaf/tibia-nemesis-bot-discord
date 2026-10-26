@@ -96,8 +96,8 @@ class CheckerUpdater:
             
             logger.info("CheckerUpdater: fetched %d spawnable bosses from API for %s", len(spawnables), world)
             return spawnables, days_map
-        except Exception:
-            logger.exception("CheckerUpdater: failed to fetch from API")
+        except Exception as exc:
+            logger.exception("CheckerUpdater: failed to fetch from API %s", url)
             return [], {}
 
     async def update_cache_for_guild(self, guild_id: int) -> None:
