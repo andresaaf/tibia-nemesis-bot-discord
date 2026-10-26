@@ -117,6 +117,9 @@ AREAS = {
 }
 
 MAX_HISTORY = 25
+# Edit queue priorities: redraws a user is waiting for go before history and aging updates
+EDIT_PRIO_CLICK = 0
+EDIT_PRIO_NORMAL = 1
 MAX_CUSTOM_ID_LENGTH = 100  # Discord custom_id max length
 
 def _now_unix() -> int:
@@ -153,20 +156,25 @@ class Checker(IFeature):
         # Cached percent map per guild to avoid frequent provider calls during rapid clicks
         # guild_id -> (timestamp_unix, percent_map)
         self._percent_map_cache: Dict[int, Tuple[int, Dict[str, Optional[int]]]] = {}
-        # Debounced update tasks per message and for the history embed
-        self._debounce_tasks: Dict[int, asyncio.Task] = {}
-        self._embed_update_task: Optional[asyncio.Task] = None
-        # Debounce configuration (dynamic backoff)
-        self._debounce_base_delay_sec: float = 0.75
-        self._debounce_max_delay_sec: float = 20.0
-        self._debounce_backoff_sec: float = self._debounce_base_delay_sec
-        self._embed_debounce_base_delay_sec: float = 5.0
-        self._embed_debounce_max_delay_sec: float = 20.0
-        self._embed_debounce_backoff_sec: float = self._embed_debounce_base_delay_sec
+        # Paced edit queue for the checker channel. All channel edits share one Discord
+        # rate limit, so a single worker sends them one at a time.
+        # msg_id -> (priority, sequence, kind, attempts); lower priority goes first,
+        # FIFO within a priority. One entry per message: newer requests replace older ones,
+        # and the content is rendered when the edit is sent, so it is always current.
+        self._edit_queue: Dict[int, Tuple[int, int, str, int]] = {}
+        self._edit_seq: int = 0
+        self._edit_event: asyncio.Event = asyncio.Event()
+        self._edit_worker_task: Optional[asyncio.Task] = None
+        self._edit_interval_sec: float = 1.2
+        self._edit_max_attempts: int = 3
+        # Latest Possible Raids content waiting to be sent by the edit worker
+        self._pending_raids_content: Optional[str] = None
+        # Guild owning the checker channel
+        self._guild_id: int = 0
         # Cache of message objects to avoid refetching
         self._messages: Dict[int, discord.Message] = {}
-        # Last rendered style state per area message: msg_id -> { boss_key: (style_value, emoji) }
-        self._last_style_state: Dict[int, Dict[str, Tuple[int, str]]] = {}
+        # Last rendered state per area message: msg_id -> { boss_key: (style_value, emoji, label) }
+        self._last_style_state: Dict[int, Dict[str, Tuple[int, str, str]]] = {}
         # Stable short IDs for areas and boss keys to keep custom_id short
         self._area_id_map: Dict[str, str] = {name: hashlib.sha1(name.encode("utf-8")).hexdigest()[:8] for name in AREAS.keys()}
         self._area_id_rev: Dict[str, str] = {v: k for k, v in self._area_id_map.items()}
@@ -193,6 +201,8 @@ class Checker(IFeature):
                 if member is None or not (member.guild_permissions.manage_guild or member.guild_permissions.manage_channels or member.guild_permissions.administrator):
                     await interaction.response.send_message("You need Manage Server/Channels or Administrator permission to set the checker channel.", ephemeral=True)
                     return
+                # Setting up the messages takes longer than Discord's 3s reply window
+                await interaction.response.defer(ephemeral=True, thinking=True)
                 try:
                     with self.client.db as db:
                         db.execute("CREATE TABLE IF NOT EXISTS checker_config (id INTEGER PRIMARY KEY, channel_id INTEGER)")
@@ -204,11 +214,11 @@ class Checker(IFeature):
                     if not self._task or self._task.done():
                         self._task = asyncio.create_task(self._background_loop())
 
-                    await interaction.response.send_message(f"Checker channel set to {channel.mention}", ephemeral=True)
+                    await interaction.followup.send(f"Checker channel set to {channel.mention}", ephemeral=True)
                 except Exception:
                     logger.exception("Checker: failed to store channel in database")
                     try:
-                        await interaction.response.send_message("Failed to register channel.", ephemeral=True)
+                        await interaction.followup.send("Failed to register channel.", ephemeral=True)
                     except Exception:
                         pass
 
@@ -223,18 +233,20 @@ class Checker(IFeature):
                     if interaction.guild is None:
                         await interaction.response.send_message("This command must be used in a server.", ephemeral=True)
                         return
+                    # Fetching spawn data and re-rendering takes longer than Discord's 3s reply window
+                    await interaction.response.defer(ephemeral=True, thinking=True)
                     try:
                         await self._updater.set_world(interaction.guild.id, world.value)
                         # refresh cache for this guild and re-render if channel configured
                         await self._updater.update_cache_for_guild(interaction.guild.id)
                         await self._ensure_channel_messages_and_update()
-                        await interaction.response.send_message(f"World set to {world.value}.", ephemeral=True)
+                        await interaction.followup.send(f"World set to {world.value}.", ephemeral=True)
                     except ValueError:
-                        await interaction.response.send_message("Invalid world.", ephemeral=True)
+                        await interaction.followup.send("Invalid world.", ephemeral=True)
                     except Exception:
                         logger.exception("Checker: failed to set world")
                         try:
-                            await interaction.response.send_message("Failed to set world.", ephemeral=True)
+                            await interaction.followup.send("Failed to set world.", ephemeral=True)
                         except Exception:
                             pass
 
@@ -248,6 +260,8 @@ class Checker(IFeature):
                     if interaction.guild is None:
                         await interaction.response.send_message("This command must be used in a server.", ephemeral=True)
                         return
+                    # Fetching spawn data and re-rendering takes longer than Discord's 3s reply window
+                    await interaction.response.defer(ephemeral=True, thinking=True)
                     try:
                         guild_id = interaction.guild.id
                         # Refresh cache and re-render messages
@@ -255,14 +269,14 @@ class Checker(IFeature):
                         await self._ensure_channel_messages_and_update()
                         allowed = self._updater.get_allowed_boss_names(guild_id)
                         world = self._updater.get_world(guild_id) or "(no world set)"
-                        await interaction.response.send_message(
+                        await interaction.followup.send(
                             f"Refreshed checker cache for world {world}. Possible spawns: {len(allowed)}.",
                             ephemeral=True,
                         )
                     except Exception:
                         logger.exception("Checker: manual refresh failed")
                         try:
-                            await interaction.response.send_message("Failed to refresh checker cache.", ephemeral=True)
+                            await interaction.followup.send("Failed to refresh checker cache.", ephemeral=True)
                         except Exception:
                             pass
 
@@ -327,8 +341,7 @@ class Checker(IFeature):
         if channel_id:
             self._task = asyncio.create_task(self._background_loop())
             self._checker_channel_id = channel_id
-            if not self._tick_task or self._tick_task.done():
-                self._tick_task = asyncio.create_task(self._tick_loop())
+            self._ensure_workers()
         else:
             logger.info("Checker: no channel configured yet — waiting for /checker before activating updates")
 
@@ -379,6 +392,10 @@ class Checker(IFeature):
                 return
 
         guild_id = getattr(channel, 'guild', None).id if getattr(channel, 'guild', None) else 0
+        # Also covers a channel set with /checker after startup
+        self._checker_channel_id = channel_id
+        self._guild_id = guild_id
+        self._ensure_workers()
 
         # Reset active state for bosses marked serversave=True (daily reset behavior) on any refresh/ensure
         try:
@@ -526,35 +543,13 @@ class Checker(IFeature):
             active = area_active_map.get(area, {})
             existing = existing_area_msgs.get(area)
             if existing is not None:
-                # Check if content changed before editing
-                try:
-                    new_state = self._compute_area_style_state(area, bosses, active, channel.guild.id, percent_map, allowed)
-                    old_state = self._last_style_state.get(existing.id)
-                    if old_state is not None and old_state == new_state:
-                        # No change needed, just cache the message reference
-                        self._active[existing.id] = dict(active)
-                        self._message_area[existing.id] = area
-                        self._area_msg_ids[area] = existing.id
-                        self._messages[existing.id] = existing
-                        continue
-                except Exception:
-                    new_state = None
-                
-                # Edit in place
-                try:
-                    content = self._build_area_content(area, bosses, active)
-                    view = self._view_for_area(area, bosses, active, channel.guild.id, percent_map, allowed)
-                    await existing.edit(content=content, view=view)
-                    self._active[existing.id] = dict(self._active.get(existing.id, {})) or {}
-                    self._message_area[existing.id] = area
-                    self._area_msg_ids[area] = existing.id
-                    self._db_save_message_id(guild_id, area, existing.id)
-                    # cache and record last style state
-                    self._messages[existing.id] = existing
-                    if new_state is not None:
-                        self._last_style_state[existing.id] = new_state
-                except Exception:
-                    logger.exception("Checker: failed to edit area message for %s", area)
+                # Track the message and let the edit worker redraw it if anything changed
+                self._active[existing.id] = dict(active)
+                self._message_area[existing.id] = area
+                self._area_msg_ids[area] = existing.id
+                self._messages[existing.id] = existing
+                self._db_save_message_id(guild_id, area, existing.id)
+                self._queue_edit(existing.id, "area")
             else:
                 # Create new message
                 try:
@@ -579,20 +574,13 @@ class Checker(IFeature):
         try:
             raids_text = await self._build_possible_raids_content(percent_map)
             if existing_raids_msg is not None:
+                self._raids_msg_id = existing_raids_msg.id
+                self._messages[existing_raids_msg.id] = existing_raids_msg
+                self._db_save_message_id(guild_id, 'RAIDS', existing_raids_msg.id)
                 # Only edit if content changed
                 if self._last_raids_content != raids_text:
-                    try:
-                        await existing_raids_msg.edit(content=raids_text)
-                        self._last_raids_content = raids_text
-                        self._raids_msg_id = existing_raids_msg.id
-                        self._messages[existing_raids_msg.id] = existing_raids_msg
-                        self._db_save_message_id(guild_id, 'RAIDS', existing_raids_msg.id)
-                    except Exception:
-                        logger.exception("Checker: failed to edit Possible Raids message")
-                else:
-                    # No change, just cache the message reference
-                    self._raids_msg_id = existing_raids_msg.id
-                    self._messages[existing_raids_msg.id] = existing_raids_msg
+                    self._pending_raids_content = raids_text
+                    self._queue_edit(existing_raids_msg.id, "raids")
             else:
                 sent = await channel.send(raids_text)
                 self._last_raids_content = raids_text
@@ -603,14 +591,7 @@ class Checker(IFeature):
             logger.exception("Checker: failed to send/edit Possible Raids message")
 
         # Update the first message embed to reflect current history
-        try:
-            first_msg = self._messages.get(self._first_msg_id)
-            if first_msg is None:
-                first_msg = await channel.fetch_message(self._first_msg_id)
-                self._messages[self._first_msg_id] = first_msg
-            await first_msg.edit(embed=self._build_first_embed(guild_id))
-        except Exception:
-            logger.exception("Checker: failed to update first message %s", self._first_msg_id)
+        self._queue_edit(self._first_msg_id, "first")
 
     def _prune_serversave_active(self) -> None:
         """Clear active markers for bosses that should reset on server save (09:00) or on manual refresh.
@@ -854,23 +835,26 @@ class Checker(IFeature):
                 last_ts = None
             style, emoji_str = self._style_and_emoji_for_ts(last_ts, now_ts, warn_s, alert_s, reset_s)
             cid = self._make_custom_id(area, boss_key)
-            # Look up percentage by base boss name
-            pct = percent_map.get(base_name)
-            # Adjust display name for Furyosa: append current Fury Gate city if set
-            label_name = name
-            try:
-                if boss_key == 'Furyosa':
-                    city = self._get_furygate_city(guild_id)
-                    if city:
-                        label_name = f"{name} ({city})"
-            except Exception:
-                pass
-            # Persistent bosses never show a percentage label; only show % when >2
-            base_label = label_name if persistent else (f"{label_name} [{pct}%]" if (isinstance(pct, int) and pct > 2) else label_name)
+            base_label = self._button_label(name, boss_key, base_name, persistent, guild_id, percent_map)
             # Convert emoji string to PartialEmoji for button
             emoji_obj = discord.PartialEmoji.from_str(emoji_str) if emoji_str else None
             view.add_item(discord.ui.Button(style=style, label=base_label, emoji=emoji_obj, custom_id=cid))
         return view
+
+    def _button_label(self, name: str, boss_key: str, base_name: str, persistent: bool, guild_id: int, percent_map: Dict[str, Optional[int]]) -> str:
+        # Adjust display name for Furyosa: append current Fury Gate city if set
+        label_name = name
+        try:
+            if boss_key == 'Furyosa':
+                city = self._get_furygate_city(guild_id)
+                if city:
+                    label_name = f"{name} ({city})"
+        except Exception:
+            pass
+        # Look up percentage by base boss name
+        pct = percent_map.get(base_name)
+        # Persistent bosses never show a percentage label; only show % when >2
+        return label_name if persistent else (f"{label_name} [{pct}%]" if (isinstance(pct, int) and pct > 2) else label_name)
 
     def _style_and_emoji_for_ts(self, ts: Optional[int], now_ts: Optional[int] = None, warn_s: Optional[int] = None, alert_s: Optional[int] = None, reset_s: Optional[int] = None) -> Tuple[discord.ButtonStyle, str]:
         if now_ts is None:
@@ -962,18 +946,28 @@ class Checker(IFeature):
             self._active[msg.id] = active
             
             # Persist timestamp to database
+            guild_id = interaction.guild.id if interaction.guild else 0
             try:
-                guild_id = interaction.guild.id if interaction.guild else 0
                 self._db_save_active(guild_id, msg.id, area, boss, ts)
             except Exception:
                 logger.exception("Checker: failed to persist active timestamp for %s/%s", area, boss)
 
-        # Schedule a debounced edit of the area message to reduce rate-limit hits
-        try:
-            guild_id = interaction.guild.id if interaction.guild else 0
-            self._schedule_area_message_update(msg.channel, msg.id, area, guild_id)
-        except Exception:
-            logger.exception("Checker: failed to schedule debounced area update for %s", msg.id)
+            # Redraw the clicked message right away through the interaction itself. This edit
+            # does not count against the channel's message edit rate limit.
+            redrawn = False
+            try:
+                pmap = self._get_cached_percent_map(guild_id) or {}
+                allowed = set(pmap.keys())
+                bosses = AREAS.get(area, [])
+                new_state = self._compute_area_style_state(area, bosses, active, guild_id, pmap, allowed)
+                view = self._view_for_area(area, bosses, active, guild_id, pmap, allowed)
+                await interaction.edit_original_response(content=self._build_area_content(area, bosses, active), view=view)
+                self._last_style_state[msg.id] = new_state
+                redrawn = True
+            except Exception as e:
+                logger.warning("Checker: interaction redraw of %s (%s) failed, queueing a regular edit: %r", msg.id, area, e)
+        if not redrawn:
+            self._queue_edit(msg.id, "area", EDIT_PRIO_CLICK)
 
         # record check in history (newest first) using BOSSES key as before
         user_display = getattr(interaction.user, "display_name", None) or getattr(interaction.user, "name", str(interaction.user))
@@ -983,45 +977,18 @@ class Checker(IFeature):
             if len(self._history) > MAX_HISTORY:
                 self._history = self._history[:MAX_HISTORY]
 
-        # Debounce the history embed update as well
-        try:
-            self._schedule_embed_update(msg.channel, guild_id)
-        except Exception:
-            logger.exception("Checker: failed to schedule debounced history embed update")
+        # The edit worker coalesces history embed updates from rapid clicks
+        if self._first_msg_id:
+            self._queue_edit(self._first_msg_id, "first")
 
-            
     async def close(self):
-        if self._task and not self._task.cancelled():
-            self._task.cancel()
-            try:
-                await self._task
-            except Exception:
-                pass
-        if self._tick_task and not self._tick_task.cancelled():
-            self._tick_task.cancel()
-            try:
-                await self._tick_task
-            except Exception:
-                pass
-        # Cancel any pending debounced updates
-        try:
-            for t in list(self._debounce_tasks.values()):
-                if t and not t.cancelled():
-                    t.cancel()
-                    try:
-                        await t
-                    except Exception:
-                        pass
-            self._debounce_tasks.clear()
-        except Exception:
-            pass
-        if self._embed_update_task and not self._embed_update_task.cancelled():
-            self._embed_update_task.cancel()
-            try:
-                await self._embed_update_task
-            except Exception:
-                pass
-            self._embed_update_task = None
+        for task in (self._task, self._tick_task, self._edit_worker_task):
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
 
     async def _tick_loop(self):
         """Periodic updater to advance button states (15/30/60 min) and expire them after 60 minutes."""
@@ -1031,14 +998,8 @@ class Checker(IFeature):
                 # If no channel or no messages, skip
                 if not self._checker_channel_id or not self._active:
                     continue
-                channel = self.client.get_channel(self._checker_channel_id)
-                if channel is None:
-                    try:
-                        channel = await self.client.fetch_channel(self._checker_channel_id)
-                    except Exception:
-                        continue
                 # Do NOT refresh spawnable percentages every minute; use cached map
-                guild_id = getattr(channel, 'guild', None).id if getattr(channel, 'guild', None) else 0
+                guild_id = self._guild_id
                 pmap: Dict[str, Optional[int]] = self._get_cached_percent_map(guild_id) or {}
                 allowed = set(pmap.keys())
 
@@ -1062,38 +1023,10 @@ class Checker(IFeature):
                     area = self._message_area.get(msg_id)
                     if not area:
                         continue
-                    bosses = AREAS.get(area, [])
-                    lock = self._locks.get(msg_id)
-                    if lock is None:
-                        lock = asyncio.Lock()
-                        self._locks[msg_id] = lock
-                    # Compute current style state and compare with last
-                    try:
-                        new_state = self._compute_area_style_state(area, bosses, active_map, guild_id, pmap, allowed)
-                        old_state = self._last_style_state.get(msg_id)
-                        if old_state is not None and old_state == new_state:
-                            continue  # No visual change needed
-                    except Exception:
-                        new_state = None
-
-                    async with lock:
-                        try:
-                            # Avoid refetching: use cached message object when available
-                            msg_obj = self._messages.get(msg_id)
-                            if msg_obj is None:
-                                msg_obj = await channel.fetch_message(msg_id)
-                                self._messages[msg_id] = msg_obj
-                            content = self._build_area_content(area, bosses, active_map)
-                            view = self._view_for_area(area, bosses, active_map, guild_id, pmap, allowed)
-                            await msg_obj.edit(content=content, view=view)
-                            if new_state is not None:
-                                self._last_style_state[msg_id] = new_state
-                        except discord.NotFound:
-                            # Message was deleted; stop tracking it
-                            self._forget_message(msg_id)
-                        except Exception as e:
-                            # Keep tracking so the next tick retries the edit
-                            logger.warning("Checker: tick edit of area message %s (%s) failed: %r", msg_id, area, e)
+                    # Queue a redraw only when the buttons would look different
+                    new_state = self._compute_area_style_state(area, AREAS.get(area, []), active_map, guild_id, pmap, allowed)
+                    if self._last_style_state.get(msg_id) != new_state:
+                        self._queue_edit(msg_id, "area")
             except asyncio.CancelledError:
                 break
             except Exception:
@@ -1113,9 +1046,9 @@ class Checker(IFeature):
         except Exception:
             return None
 
-    def _compute_area_style_state(self, area: str, bosses: List[str], active: Dict[str, int], guild_id: int, percent_map: Dict[str, Optional[int]], allowed: Optional[Set[str]] = None) -> Dict[str, Tuple[int, str]]:
-        """Compute the style state (style.value, emoji) for all buttons that would be rendered for an area."""
-        state: Dict[str, Tuple[int, str]] = {}
+    def _compute_area_style_state(self, area: str, bosses: List[str], active: Dict[str, int], guild_id: int, percent_map: Dict[str, Optional[int]], allowed: Optional[Set[str]] = None) -> Dict[str, Tuple[int, str, str]]:
+        """Compute the state (style.value, emoji, label) for all buttons that would be rendered for an area."""
+        state: Dict[str, Tuple[int, str, str]] = {}
         allowed = set(percent_map.keys()) if allowed is None else allowed
         now_ts = _now_unix()
         killed_bosses = self._killed_bosses.get(guild_id, set())
@@ -1145,126 +1078,120 @@ class Checker(IFeature):
                 style_val = int(getattr(style, 'value', int(style)))  # discord.ButtonStyle has .value
             except Exception:
                 style_val = 0
-            state[boss_key] = (style_val, emoji)
+            label = self._button_label(name, boss_key, base_name, persistent, guild_id, percent_map)
+            state[boss_key] = (style_val, emoji, label)
         return state
 
-    def _schedule_area_message_update(self, channel: discord.abc.Messageable, msg_id: int, area: str, guild_id: int, delay_sec: Optional[float] = None):
-        # Cancel any existing debounce task for this message to ensure we show latest state
-        existing = self._debounce_tasks.get(msg_id)
-        if existing and not existing.done():
-            existing.cancel()
+    # --------------------- Paced edit queue ---------------------
+    def _ensure_workers(self) -> None:
+        if not self._tick_task or self._tick_task.done():
+            self._tick_task = asyncio.create_task(self._tick_loop())
+        if not self._edit_worker_task or self._edit_worker_task.done():
+            self._edit_worker_task = asyncio.create_task(self._edit_worker())
 
-        async def _runner():
+    def _queue_edit(self, msg_id: Optional[int], kind: str, priority: int = EDIT_PRIO_NORMAL, attempts: int = 0) -> None:
+        """Queue an edit of a checker message ("area", "first" or "raids").
+        A message has at most one queued edit; queueing it again keeps its place in line
+        and takes the higher priority."""
+        if not msg_id:
+            return
+        existing = self._edit_queue.get(msg_id)
+        if existing is not None:
+            prio, seq, _kind, old_attempts = existing
+            self._edit_queue[msg_id] = (min(prio, priority), seq, kind, min(attempts, old_attempts))
+        else:
+            self._edit_seq += 1
+            self._edit_queue[msg_id] = (priority, self._edit_seq, kind, attempts)
+        self._edit_event.set()
+
+    async def _edit_worker(self):
+        """Send queued checker edits one at a time, paced to stay under the channel's rate limit."""
+        while True:
             try:
-                use_delay = delay_sec if delay_sec is not None else float(self._debounce_backoff_sec)
-                await asyncio.sleep(use_delay)
-                # Double-check we still have state for this message
-                active_map = self._active.get(msg_id, {})
-                bosses = AREAS.get(area, [])
-                # Use cached percent map if available; avoid network calls on rapid clicks
-                pmap = self._get_cached_percent_map(guild_id) or {}
-                allowed = set(pmap.keys())
-                # Build prospective style state to decide if an edit is necessary
-                try:
-                    new_state = self._compute_area_style_state(area, bosses, active_map, guild_id, pmap, allowed)
-                    old_state = self._last_style_state.get(msg_id)
-                    if old_state is not None and old_state == new_state:
-                        return  # Skip edit; no visual change
-                except Exception:
-                    new_state = None
-                content = self._build_area_content(area, bosses, active_map)
-                view = self._view_for_area(area, bosses, active_map, guild_id, pmap, allowed)
-                # Acquire the same lock to avoid racing with tick loop
-                lock = self._locks.get(msg_id)
-                if lock is None:
-                    lock = asyncio.Lock()
-                    self._locks[msg_id] = lock
-                async with lock:
-                    try:
-                        # Avoid refetching when possible
-                        msg = self._messages.get(msg_id)
-                        if msg is None:
-                            msg = await channel.fetch_message(msg_id)
-                            self._messages[msg_id] = msg
-                        await msg.edit(content=content, view=view)
-                        # Successful edit: gently reduce backoff toward base
-                        try:
-                            self._debounce_backoff_sec = max(
-                                self._debounce_base_delay_sec,
-                                self._debounce_backoff_sec * 0.8,
-                            )
-                        except Exception:
-                            pass
-                        if new_state is not None:
-                            self._last_style_state[msg_id] = new_state
-                    except Exception as e:
-                        # If we're rate-limited, increase backoff (exponential up to max)
-                        try:
-                            status = getattr(e, 'status', None)
-                            if isinstance(e, discord.HTTPException) and status == 429:
-                                self._debounce_backoff_sec = min(
-                                    self._debounce_max_delay_sec,
-                                    max(self._debounce_backoff_sec, self._debounce_base_delay_sec) * 2.0,
-                                )
-                        except Exception:
-                            pass
-                        if isinstance(e, discord.NotFound):
-                            # Message was deleted; stop tracking it
-                            self._forget_message(msg_id)
-                        else:
-                            # Keep tracking so the tick loop retries on its next pass
-                            logger.warning("Checker: debounced edit of area message %s (%s) failed: %r", msg_id, area, e)
-            finally:
-                # Clear task entry
-                try:
-                    self._debounce_tasks.pop(msg_id, None)
-                except Exception:
-                    pass
+                if not self._edit_queue:
+                    self._edit_event.clear()
+                    await self._edit_event.wait()
+                    continue
+                msg_id = min(self._edit_queue, key=lambda m: self._edit_queue[m][:2])
+                _prio, _seq, kind, attempts = self._edit_queue.pop(msg_id)
+                # Only pace after a request was actually sent
+                if await self._run_edit(msg_id, kind, attempts):
+                    await asyncio.sleep(self._edit_interval_sec)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Checker: edit worker error")
+                await asyncio.sleep(self._edit_interval_sec)
 
-        task = asyncio.create_task(_runner())
-        self._debounce_tasks[msg_id] = task
-
-    def _schedule_embed_update(self, channel: discord.abc.Messageable, guild_id: Optional[int] = None, delay_sec: Optional[float] = None):
-        # Cancel existing task to ensure latest history is shown
-        if self._embed_update_task and not self._embed_update_task.done():
-            self._embed_update_task.cancel()
-
-        async def _runner():
+    async def _run_edit(self, msg_id: int, kind: str, attempts: int) -> bool:
+        """Render and send one queued edit. Returns True when a request was sent to Discord."""
+        if not self._checker_channel_id:
+            return False
+        channel = self.client.get_channel(self._checker_channel_id)
+        if channel is None:
             try:
-                use_delay = delay_sec if delay_sec is not None else float(self._embed_debounce_backoff_sec)
-                await asyncio.sleep(use_delay)
-                if not self._first_msg_id:
-                    return
-                try:
-                    first_msg = self._messages.get(self._first_msg_id)
-                    if first_msg is None:
-                        first_msg = await channel.fetch_message(self._first_msg_id)
-                        self._messages[self._first_msg_id] = first_msg
-                    await first_msg.edit(embed=self._build_first_embed(guild_id))
-                    # On success, gently reduce embed backoff
-                    try:
-                        self._embed_debounce_backoff_sec = max(
-                            self._embed_debounce_base_delay_sec,
-                            self._embed_debounce_backoff_sec * 0.8,
-                        )
-                    except Exception:
-                        pass
-                except Exception as e:
-                    logger.exception("Checker: debounced history embed update failed")
-                    # If rate limited, increase backoff
-                    try:
-                        status = getattr(e, 'status', None)
-                        if isinstance(e, discord.HTTPException) and status == 429:
-                            self._embed_debounce_backoff_sec = min(
-                                self._embed_debounce_max_delay_sec,
-                                max(self._embed_debounce_backoff_sec, self._embed_debounce_base_delay_sec) * 2.0,
-                            )
-                    except Exception:
-                        pass
-            finally:
-                self._embed_update_task = None
+                channel = await self.client.fetch_channel(self._checker_channel_id)
+            except Exception:
+                logger.warning("Checker: could not resolve checker channel for queued edit of %s", msg_id)
+                return True
+        lock = self._locks.get(msg_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[msg_id] = lock
+        # Same lock as clicks, so a click redraw and a queued edit never overtake each other
+        async with lock:
+            new_state = None
+            content = None
+            try:
+                if kind == "area":
+                    area = self._message_area.get(msg_id)
+                    if not area:
+                        return False
+                    active_map = self._active.get(msg_id, {})
+                    bosses = AREAS.get(area, [])
+                    pmap = self._get_cached_percent_map(self._guild_id) or {}
+                    allowed = set(pmap.keys())
+                    new_state = self._compute_area_style_state(area, bosses, active_map, self._guild_id, pmap, allowed)
+                    if self._last_style_state.get(msg_id) == new_state:
+                        return False  # Already showing this state
+                    edit_kwargs = {
+                        "content": self._build_area_content(area, bosses, active_map),
+                        "view": self._view_for_area(area, bosses, active_map, self._guild_id, pmap, allowed),
+                    }
+                elif kind == "first":
+                    edit_kwargs = {"embed": self._build_first_embed(self._guild_id)}
+                elif kind == "raids":
+                    content = self._pending_raids_content
+                    if content is None or content == self._last_raids_content:
+                        return False
+                    edit_kwargs = {"content": content}
+                else:
+                    return False
 
-        self._embed_update_task = asyncio.create_task(_runner())
+                msg = self._messages.get(msg_id)
+                if msg is None:
+                    msg = await channel.fetch_message(msg_id)
+                    self._messages[msg_id] = msg
+                await msg.edit(**edit_kwargs)
+                if kind == "area":
+                    self._last_style_state[msg_id] = new_state
+                elif kind == "raids":
+                    self._last_raids_content = content
+                return True
+            except discord.NotFound:
+                # Message was deleted; stop tracking it
+                self._forget_message(msg_id)
+                return True
+            except Exception as e:
+                if kind == "area":
+                    # The tick loop queues it again within a minute since the state still differs
+                    logger.warning("Checker: area edit of message %s failed, retrying on next tick: %r", msg_id, e)
+                elif attempts + 1 < self._edit_max_attempts:
+                    logger.warning("Checker: %s edit of message %s failed, will retry: %r", kind, msg_id, e)
+                    self._queue_edit(msg_id, kind, attempts=attempts + 1)
+                else:
+                    logger.warning("Checker: %s edit of message %s failed %d times, giving up: %r", kind, msg_id, attempts + 1, e)
+                return True
 
     # --------------------- Helpers and DB persistence ---------------------
     def _forget_message(self, msg_id: int) -> None:
@@ -1317,10 +1244,17 @@ class Checker(IFeature):
             self._killed_bosses[guild_id] = set()
         
         # Find all boss keys that have this role
+        killed_keys: Set[str] = set()
         for boss_key, data in BOSSES.items():
             if isinstance(data, dict) and data.get('role') == role_name:
                 self._killed_bosses[guild_id].add(boss_key)
+                killed_keys.add(boss_key)
                 logger.info("Checker: marked boss %s (role %s) as killed for guild %s", boss_key, role_name, guild_id)
+
+        # Redraw only the area messages that show one of these bosses
+        for area, bosses in AREAS.items():
+            if any(self._boss_to_key(b) in killed_keys for b in bosses):
+                self._queue_edit(self._area_msg_ids.get(area), "area", EDIT_PRIO_CLICK)
     
     def clear_killed_bosses(self, guild_id: int) -> None:
         """Clear all killed boss markers for a guild. Called during daily refresh."""

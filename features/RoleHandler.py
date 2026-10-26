@@ -1,10 +1,22 @@
 from IFeature import IFeature
 import discord
+import asyncio
 import logging
 import re
+import time
+from typing import Dict, Set, Tuple
 from .Bosses import BOSSES
 
 logger = logging.getLogger(__name__)
+
+# Role changes from reactions are collected per member and applied in one request.
+# A batch is applied once the member has paused reacting for ROLE_BATCH_QUIET_SEC,
+# or at most ROLE_BATCH_MAX_WAIT_SEC after their first reaction.
+ROLE_BATCH_QUIET_SEC = 1.5
+ROLE_BATCH_MAX_WAIT_SEC = 5.0
+# Discord's member cache can lag behind our own role edits for a moment; within this
+# window the roles we last set are used as the starting point instead of the cache.
+ROLE_RECENT_TTL_SEC = 10.0
 
 # Define sections for Nemesis bosses channel
 # Note: When adding new bosses to a section, ensure that only new bosses are appended LAST to the existing list.
@@ -143,6 +155,16 @@ class RoleHandler(IFeature):
         self._role_messages = {}
         # channel_id -> channel type ('nemesis' or 'other')
         self._channel_types = {}
+        # Batched role changes, keyed by (guild_id, member_id)
+        # pending role changes: role_id -> True (add) / False (remove); the latest reaction wins
+        self._pending_roles: Dict[Tuple[int, int], Dict[int, bool]] = {}
+        # (first, last) reaction time of the pending batch, for the quiet/max wait
+        self._pending_times: Dict[Tuple[int, int], Tuple[float, float]] = {}
+        self._flush_tasks: Dict[Tuple[int, int], asyncio.Task] = {}
+        # Serializes role edits per member so batches never overtake each other
+        self._member_locks: Dict[Tuple[int, int], asyncio.Lock] = {}
+        # (time, role_ids) we last set per member, see ROLE_RECENT_TTL_SEC
+        self._recent_roles: Dict[Tuple[int, int], Tuple[float, Set[int]]] = {}
         self._init_db()
         
     
@@ -469,21 +491,101 @@ class RoleHandler(IFeature):
                         to_add = reactor_ids - current_ids_with_role
                         to_remove = current_ids_with_role - reactor_ids
 
-                        # Apply additions
+                        # Queue changes; each member's changes across all roles go out in one request
                         for uid in to_add:
-                            member = guild.get_member(uid)
-                            if member and role not in member.roles:
-                                await member.add_roles(role, reason="Role reaction sync")
-
-                        # Apply removals
+                            self._queue_role_change(guild.id, uid, role.id, True)
                         for uid in to_remove:
-                            member = guild.get_member(uid)
-                            if member and role in member.roles:
-                                await member.remove_roles(role, reason="Role reaction sync")
-                                    
+                            self._queue_role_change(guild.id, uid, role.id, False)
+
             except Exception as e:
                 logger.error(f"Failed to sync reactions for message {message_id}: {e}")
-                
+
+    def _queue_role_change(self, guild_id: int, member_id: int, role_id: int, add: bool) -> None:
+        """Record a role add/remove for a member and schedule the batch to be applied."""
+        key = (guild_id, member_id)
+        self._pending_roles.setdefault(key, {})[role_id] = add
+        now = time.monotonic()
+        first, _last = self._pending_times.get(key, (now, now))
+        self._pending_times[key] = (first, now)
+        task = self._flush_tasks.get(key)
+        if task is None or task.done():
+            self._flush_tasks[key] = asyncio.create_task(self._flush_member_roles(key))
+
+    async def _flush_member_roles(self, key: Tuple[int, int]) -> None:
+        """Wait until the member pauses reacting (or the max wait passes), then apply the batch."""
+        try:
+            while True:
+                now = time.monotonic()
+                first, last = self._pending_times.get(key, (now, now))
+                wait = min(last + ROLE_BATCH_QUIET_SEC, first + ROLE_BATCH_MAX_WAIT_SEC) - now
+                if wait <= 0:
+                    break
+                await asyncio.sleep(wait)
+        finally:
+            # Take the batch before applying it, so reactions arriving meanwhile start a new one
+            self._flush_tasks.pop(key, None)
+            self._pending_times.pop(key, None)
+            changes = self._pending_roles.pop(key, {})
+        if changes:
+            await self._apply_member_roles(key, changes)
+
+    async def _apply_member_roles(self, key: Tuple[int, int], changes: Dict[int, bool]) -> None:
+        guild_id, member_id = key
+        lock = self._member_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            guild = self.client.get_guild(guild_id)
+            member = guild.get_member(member_id) if guild else None
+            if member is None:
+                return
+            base = {r.id for r in member.roles if not r.is_default()}
+            recent = self._recent_roles.pop(key, None)
+            if recent and time.monotonic() - recent[0] < ROLE_RECENT_TTL_SEC:
+                base = set(recent[1])
+            target = set(base)
+            for role_id, add in changes.items():
+                if guild.get_role(role_id) is None:
+                    continue
+                if add:
+                    target.add(role_id)
+                else:
+                    target.discard(role_id)
+            added = target - base
+            removed = base - target
+            if not added and not removed:
+                return
+            try:
+                if len(added) + len(removed) == 1:
+                    # A single change uses the per-role endpoint, which can't touch other roles
+                    if added:
+                        await member.add_roles(guild.get_role(next(iter(added))), reason="Role reaction add")
+                    else:
+                        await member.remove_roles(guild.get_role(next(iter(removed))), reason="Role reaction remove")
+                else:
+                    # One request that sets the member's full role list
+                    roles = [r for r in (guild.get_role(rid) for rid in target) if r is not None]
+                    await member.edit(roles=roles, reason=f"Role reactions: +{len(added)} -{len(removed)}")
+                self._recent_roles[key] = (time.monotonic(), target)
+            except discord.Forbidden:
+                # A role the bot may not manage blocks the whole batch; apply the rest one by one
+                logger.warning(f"Batched role update for member {member_id} was refused, applying roles individually")
+                await self._apply_roles_individually(member, guild, added, removed)
+            except Exception as e:
+                logger.error(f"Failed to update roles for member {member_id}: {e}")
+
+    async def _apply_roles_individually(self, member: discord.Member, guild: discord.Guild, added: Set[int], removed: Set[int]) -> None:
+        for role_id in added:
+            role = guild.get_role(role_id)
+            try:
+                await member.add_roles(role, reason="Role reaction add")
+            except Exception as e:
+                logger.error(f"Failed to add role {role_id} to member {member.id}: {e}")
+        for role_id in removed:
+            role = guild.get_role(role_id)
+            try:
+                await member.remove_roles(role, reason="Role reaction remove")
+            except Exception as e:
+                logger.error(f"Failed to remove role {role_id} from member {member.id}: {e}")
+
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         """Handle reaction adds."""
         if payload.user_id == self.client.user.id:
@@ -492,17 +594,10 @@ class RoleHandler(IFeature):
         if payload.message_id in self._role_messages:
             emoji = str(payload.emoji)
             if emoji in self._role_messages[payload.message_id]:
-                # This is an authorized emoji - add the role
+                # This is an authorized emoji - add the role (batched with the member's other reactions)
                 role_id = self._role_messages[payload.message_id][emoji]
-                guild = self.client.get_guild(payload.guild_id)
-                if guild:
-                    member = guild.get_member(payload.user_id)
-                    role = guild.get_role(role_id)
-                    if member and role and role not in member.roles:
-                        try:
-                            await member.add_roles(role, reason="Role reaction add")
-                        except Exception as e:
-                            logger.error(f"Failed to add role {role.id} to member {member.id}: {e}")
+                if payload.guild_id:
+                    self._queue_role_change(payload.guild_id, payload.user_id, role_id, True)
             else:
                 # Unauthorized emoji - remove it
                 try:
@@ -527,12 +622,5 @@ class RoleHandler(IFeature):
             emoji = str(payload.emoji)
             if emoji in self._role_messages[payload.message_id]:
                 role_id = self._role_messages[payload.message_id][emoji]
-                guild = self.client.get_guild(payload.guild_id)
-                if guild:
-                    member = guild.get_member(payload.user_id)
-                    role = guild.get_role(role_id)
-                    if member and role and role in member.roles:
-                        try:
-                            await member.remove_roles(role, reason="Role reaction remove")
-                        except Exception as e:
-                            logger.error(f"Failed to remove role {role.id} from member {member.id}: {e}")
+                if payload.guild_id:
+                    self._queue_role_change(payload.guild_id, payload.user_id, role_id, False)

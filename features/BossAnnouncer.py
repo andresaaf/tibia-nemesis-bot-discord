@@ -485,7 +485,7 @@ class BossAnnouncer(IFeature):
         msg = getattr(interaction, "message", None)
         if msg is None:
             try:
-                await interaction.response.send_message("Could not resolve the announcement message.", ephemeral=True)
+                await interaction.followup.send("Could not resolve the announcement message.", ephemeral=True)
             except Exception:
                 pass
             return
@@ -494,12 +494,12 @@ class BossAnnouncer(IFeature):
         state = self._state.get(msg_id)
         if state is None:
             try:
-                await interaction.response.send_message("This announcement is no longer tracked (bot restart?).", ephemeral=True)
+                await interaction.followup.send("This announcement is no longer tracked (bot restart?).", ephemeral=True)
             except Exception:
                 pass
             return
 
-        lock = self._locks.get(msg_id) or asyncio.Lock()
+        lock = self._locks.setdefault(msg_id, asyncio.Lock())
         async with lock:
             user_id = interaction.user.id
             # Coerce legacy sets into lists to preserve ordering going forward
@@ -561,7 +561,7 @@ class BossAnnouncer(IFeature):
 
                 if not allowed:
                     try:
-                        await interaction.response.send_message("Only the creator or users with Manage Messages can enable killed mode.", ephemeral=True)
+                        await interaction.followup.send("Only the creator or users with Manage Messages can enable killed mode.", ephemeral=True)
                     except Exception:
                         pass
                     return
@@ -581,13 +581,9 @@ class BossAnnouncer(IFeature):
                                     checker = feat
                                     break
                             if checker:
+                                # Also queues a redraw of the checker areas showing this boss
                                 checker.mark_boss_killed(guild.id, role.name)
                                 logger.info("BossAnnouncer: marked boss role %s as killed in Checker for guild %s", role.name, guild.id)
-                                # Trigger a refresh of checker messages to immediately hide the boss
-                                try:
-                                    await checker._ensure_channel_messages_and_update()
-                                except Exception:
-                                    logger.exception("BossAnnouncer: failed to refresh checker messages after marking boss killed")
                 except Exception:
                     logger.exception("BossAnnouncer: failed to mark boss as killed in Checker")
                 
@@ -663,7 +659,7 @@ class BossAnnouncer(IFeature):
 
                 if not allowed:
                     try:
-                        await interaction.response.send_message("Only the creator or users with Manage Messages can close this announcement.", ephemeral=True)
+                        await interaction.followup.send("Only the creator or users with Manage Messages can close this announcement.", ephemeral=True)
                     except Exception:
                         pass
                     return
@@ -672,7 +668,7 @@ class BossAnnouncer(IFeature):
                     await msg.delete()
                 except Exception:
                     try:
-                        await interaction.response.send_message("Failed to delete announcement.", ephemeral=True)
+                        await interaction.followup.send("Failed to delete announcement.", ephemeral=True)
                     except Exception:
                         pass
                 # cleanup state
@@ -715,6 +711,12 @@ class BossAnnouncer(IFeature):
                     view.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="💀", custom_id="boss:skull"))
                     view.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="❌", custom_id="boss:close"))
 
-                await msg.edit(embed=embed, view=view)
+                # Redraw through the interaction itself: immediate, and not counted against
+                # the channel's message edit rate limit. Fall back to a regular edit.
+                try:
+                    await interaction.edit_original_response(embed=embed, view=view)
+                except Exception as e:
+                    logger.warning("BossAnnouncer: interaction redraw of %s failed, using a regular edit: %r", msg_id, e)
+                    await msg.edit(embed=embed, view=view)
             except Exception:
                 logger.exception("Failed to update announcement message %s", msg_id)
