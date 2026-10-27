@@ -672,6 +672,11 @@ class Checker(IFeature):
             ":bangbang: = at least 30 minutes ago (Zarabustor 15 minutes | POI 90 minutes)\n"
             ":alarm_clock: = over 60 minutes ago (Zarabustor 30 minutes | POI 180 minutes)"
         )
+        # Credit the site the spawn data comes from (requested by GuildStats)
+        source = self._updater.get_source(guild_id) if guild_id else None
+        if source:
+            name, url = source
+            legend_text += f"\n\nData based on [{name}]({url})" if url else f"\n\nData based on {name}"
         # Fast path when no history
         if not self._history:
             emb.description = f"{legend_text}\n\nNo checks yet."

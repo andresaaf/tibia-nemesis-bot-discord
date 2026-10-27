@@ -34,6 +34,8 @@ class CheckerUpdater:
         self._allowed_today: Dict[int, Set[str]] = {}
         # guild_id -> list of (boss_name, percent or None) for bosses that could spawn
         self._spawnables: Dict[int, List[Tuple[str, Optional[int]]]] = {}
+        # world -> (source name, source url) the API's data comes from, for crediting it
+        self._sources: Dict[str, Tuple[str, str]] = {}
         # API base URL from bot config
         self._api_base_url = client.api_base_url
         self._lock = asyncio.Lock()
@@ -76,7 +78,11 @@ class CheckerUpdater:
                         logger.warning("CheckerUpdater: API returned HTTP %s for %s", resp.status, url)
                         return [], {}
                     data = await resp.json()
-                    
+
+            source = data.get("source") or {}
+            if source.get("name"):
+                self._sources[world] = (source["name"], source.get("url") or "")
+
             # Parse new format: {"world": "...", "updated_at": "...", "bosses": [{"name": "...", "percent": int|null, "days_since_kill": int|null, "spawnable": bool}]}
             spawnables = []
             days_map = {}
@@ -188,6 +194,13 @@ class CheckerUpdater:
                 canon[n.lower()] = n
             self._canon_map = canon
         return self._canon_map.get(name.lower())
+
+    def get_source(self, guild_id: int) -> Optional[Tuple[str, str]]:
+        """Return (name, url) of the site the guild's boss data comes from, or None if unknown."""
+        world = self.get_world(guild_id)
+        if not world:
+            return None
+        return self._sources.get(world)
 
     # --- Public helper to get spawnable bosses with percentages ---
     async def get_spawnables_with_percentages(self, guild_id: int) -> List[Tuple[str, Optional[int]]]:
